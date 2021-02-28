@@ -31,7 +31,12 @@ class EncoderBlock(nn.Module):
         self.dropout = dropout
 
         # TODO: Figure out depthwise separable
-        self.conv_layer = nn.Conv1d(in_channels=inp_dim,
+        self.first_conv_layer = nn.Conv1d(in_channels=inp_dim,
+                                    out_channels=filters,
+                                    kernel_size=kernel,
+                                    padding=(kernel-1)//2,
+                                    groups=1)
+        self.conv_layer = nn.Conv1d(in_channels=filters,
                                     out_channels=filters,
                                     kernel_size=kernel,
                                     padding=(kernel-1)//2,
@@ -44,9 +49,14 @@ class EncoderBlock(nn.Module):
         # Positional encoding
         x = self.pos_enc(x)
         # Conv layers
+        # First convolution
         x = x.transpose(1,2)
         y = nn.LayerNorm(x.size()[1:])(x)
-        x = self.conv_layer(y)
+        x = self.first_conv_layer(y)
+        for i in range(self.num_conv - 1):
+            y = nn.LayerNorm(x.size()[1:])(x)
+            y = self.conv_layer(y)
+            x = x + y
         # Self-Attention
         y = nn.LayerNorm(x.size()[1:])(x)
         y = y.permute(2, 0, 1)
