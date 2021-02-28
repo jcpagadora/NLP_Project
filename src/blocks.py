@@ -5,39 +5,61 @@ import torch.nn.functional as F
 import numpy as np
 
 class EncoderBlock(nn.Module):
-	"""Starts with positional encoding, followed by multiple convolutional layers.
-	   Then, a self-attention, and finally a feefoward layer.
-	   Between each is a layer-norm.
-	   Note: Each of these is placed within a residual block
+    """Starts with positional encoding, followed by multiple convolutional layers.
+       Then, a self-attention, and finally a feefoward layer.
+        Between each is a layer-norm.
+       Note: Each of these is placed within a residual block
+       Note: filters is the dimensionality of this block, i.e., input and output size
 
-	   Args:
-	    	inp_dim (int): Dimension of the input (after positional encoding)
-	     	num_conv (int): Number of initial convolutional layers
-	    	kernel (int): Kernel size of each convolution
-	    	filters (int): Number of filters
-	    	num_heads (int): Number of heads for self-attention
-	    	dropout (float): Dropout probability
-	    	max_len (int): Maximum length for positional encoding
+       Args:
+            inp_dim (int): Dimension of the input (after positional encoding)
+             num_conv (int): Number of initial convolutional layers
+            kernel (int): Kernel size of each convolution
+            filters (int): Number of filters
+            num_heads (int): Number of heads for self-attention
+            dropout_p (float): Dropout probability for positional encoding
+            dropout (float): Dropout probability for feedforward layer
+            max_len (int): Maximum length for positional encoding
 
-	   Note: output of this layer should equal the number of filters 
-	"""
-	def __init__(self, inp_dim, num_conv=4, kernel=7, filters=128, num_heads=8, dropout=0.1, max_len=5000):
-		self.pos_enc = PositionalEncoding(inp_dim, dropout, max_len)
-		self.num_conv = num_conv
+       Note: output of this layer should equal the number of filters 
+    """
+    def __init__(self, inp_dim, num_conv=4, kernel=7, filters=128, num_heads=8, 
+                    dropout_p=0.1, dropout=0.5, max_len=5000):
+        super(EncoderBlock, self).__init__()
+        self.pos_enc = PositionalEncoding(inp_dim, dropout_p, max_len)
+        self.num_conv = num_conv
+        self.dropout = dropout
 
-		# TODO: Figure out depthwise separable
-		self.conv_layer = nn.Conv1D(filters, filters, kernel)
+        # TODO: Figure out depthwise separable
+        self.conv_layer = nn.Conv1d(in_channels=inp_dim,
+                                    out_channels=filters,
+                                    kernel_size=kernel,
+                                    padding=(kernel-1)//2,
+                                    groups=1)
+        self.self_attention = nn.MultiheadAttention(filters, num_heads)
+        self.feed_forward = nn.Linear(filters, filters)
 
 
-	def forward(self, x):
-		# Positional encoding
-		x = self.pos_enc(x)
-		# Conv layers
-		y = nn.LayerNorm(x.size()[1:])
-		for i in range(self.num_conv):
-			y = self.conv_layer(y)
-		x = x + y # Res connection
-		# TODO: Self-attention, & feedforward layer
+    def forward(self, x):
+        # Positional encoding
+        x = self.pos_enc(x)
+        # Conv layers
+        x = x.transpose(1,2)
+        y = nn.LayerNorm(x.size()[1:])(x)
+        x = self.conv_layer(y)
+        # Self-Attention
+        y = nn.LayerNorm(x.size()[1:])(x)
+        y = y.permute(2, 0, 1)
+        x = x.permute(2, 0, 1)
+        y, _ = self.self_attention(query=y, key=y, value=y)
+        x = x + y
+        # Feedforward
+        y = nn.LayerNorm(x.size()[1:])(x)
+        y = self.feed_forward(y)
+        y = nn.Dropout(self.dropout)(y)
+        x = x + y
+        x = x.permute(1, 0, 2)
+        return x
 
 
 

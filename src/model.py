@@ -30,14 +30,28 @@ class QANet(nn.Module):
 
 	Args:
         word_vectors (torch.Tensor): Pre-trained word vectors.
-        hidden_size (int): Number of features in the hidden state at each layer.
+        char_size (int): Number of characters in char-level vocabulary
+        char_emb_dim (int): Dimensionality of character-level embedding
         drop_prob (float): Dropout probability.
 	"""
-	def __init__(self, word_vectors, hidden_size, drop_prob=0.):
-        super(BiDAF, self).__init__()
-        self.emb = layers.Embedding(word_vectors=word_vectors,
-                                    hidden_size=hidden_size,
+	def __init__(self, word_vectors, char_size, char_emb_dim=200, drop_prob=0.5):
+        super(QANet, self).__init__()
+        self.c_ember = layers.Embedding(word_vectors=word_vectors,
+                                    char_size=char_size,
+                                    char_emb_dim=char_emb_dim,
                                     drop_prob=drop_prob)
+        self.q_ember = layers.Embedding(word_vectors=word_vectors,
+                                    char_size=char_size,
+                                    char_emb_dim=char_emb_dim,
+                                    drop_prob=drop_prob)
+
+       	in_dim = word_vectors.size(1) + char_emb_dim
+
+        self.c_emb_encer = layers.EmbeddingEncoder(in_dim, num_conv=4, kernel=7, filters=128, num_heads=8, 
+					dropout_p=0.1, dropout=0.5, max_len=5000)
+
+        self.q_emb_encer = layers.EmbeddingEncoder(in_dim, num_conv=4, kernel=7, filters=128, num_heads=8, 
+					dropout_p=0.1, dropout=0.5, max_len=5000)
         
         # TODO: More layers!!
 
@@ -53,9 +67,13 @@ class QANet(nn.Module):
         c_len_chars, q_len_chars = cchar_mask.sum(-1), qchar_mask.sum(-1)
 
         # Input embedding
-        c_emb = self.emb(cw_idxs)
-        q_emb = self.emb(qw_idxs)
+        c_emb = self.c_ember(cword_idxs, cchar_idxs)
+        q_emb = self.q_ember(qword_idxs, qchar_idxs)
 
-        # TODO: Complete QANET forward computation
+        # Embedding encoder
+        c_emb_enc = self.c_emb_encer(c_emb)
+        q_emb_enc = self.q_emb_encer(c_emb)
+
+        # TODO: Complete the rest of QANET forward computation
 
 

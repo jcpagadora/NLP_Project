@@ -5,6 +5,7 @@ import torch.nn.functional as F
 
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 from util import masked_softmax
+from blocks import *
 
 
 class Embedding(nn.Module):
@@ -25,7 +26,7 @@ class Embedding(nn.Module):
         self.char_embed = nn.Embedding(char_size, char_emb_dim)
         
         # TODO: figure out highway encoder, if this is right
-        self.hwy = HighwayEncoder(2, word_embed.size(1) + char_emb_dim)
+        self.hwy = HighwayEncoder(2, word_vectors.size(1) + char_emb_dim)
 
     def forward(self, word_idxs, char_idxs):
         word_emb = self.word_embed(word_idxs)   # (batch_size, seq_len, embed_size)
@@ -76,8 +77,14 @@ class EmbeddingEncoder(nn.Module):
 		self-attention, then a feed forward layer
 	"""
 
-	
+	def __init__(self, inp_dim, num_conv=4, kernel=7, filters=128, num_heads=8, 
+					dropout_p=0.1, dropout=0.5, max_len=5000):
+		super(EmbeddingEncoder, self).__init__()
+		self.block1 = EncoderBlock(inp_dim, num_conv, kernel, filters, num_heads, 
+					dropout_p, dropout, max_len)
 
+	def forward(self, x):
+		return self.block1(x)
 
 
 
