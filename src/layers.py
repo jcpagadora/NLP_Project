@@ -1,4 +1,3 @@
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -11,7 +10,7 @@ from blocks import *
 class Embedding(nn.Module):
     """Input embedding layer for QANet.
 
-   	Includes character embeddings and a 2-layer Highway Encoder
+    Includes character embeddings and a 2-layer Highway Encoder
 
     Args:
         word_vectors (torch.Tensor): Pre-trained word vectors.
@@ -19,7 +18,7 @@ class Embedding(nn.Module):
         char_emb_dim (int): Dimension of character embeddings
         drop_prob (float): Probability of zero-ing out activations
     """
-	def __init__(self, word_vectors, char_size, char_emb_dim, drop_prob):
+    def __init__(self, word_vectors, char_size, char_emb_dim, drop_prob):
         super(Embedding, self).__init__()
         self.drop_prob = drop_prob
         self.word_embed = nn.Embedding.from_pretrained(word_vectors)
@@ -40,8 +39,6 @@ class Embedding(nn.Module):
         emb = F.dropout(emb, self.drop_prob, self.training)
 
         return emb
-
-# TODO: Fill out classes for all other layers
 
 class HighwayEncoder(nn.Module):
     """Encode an input sequence using a highway network.
@@ -72,29 +69,29 @@ class HighwayEncoder(nn.Module):
 
 
 class EmbeddingEncoder(nn.Module):
-	"""Embedding Encoder layer consists of a stack of encoder blocks,
-		each encoder block consists of several convolutional layers, then
-		self-attention, then a feed forward layer
-	"""
+    """Embedding Encoder layer consists of a stack of encoder blocks,
+        each encoder block consists of several convolutional layers, then
+        self-attention, then a feed forward layer
+    """
 
-	def __init__(self, inp_dim, num_conv=4, kernel=7, filters=128, num_heads=8, 
-					dropout_p=0.1, dropout=0.5, max_len=5000):
-		super(EmbeddingEncoder, self).__init__()
-		self.block1 = EncoderBlock(inp_dim, num_conv, kernel, filters, num_heads, 
-					dropout_p, dropout, max_len)
+    def __init__(self, inp_dim, num_conv=4, kernel=7, filters=128, num_heads=8, 
+                    dropout_p=0.1, dropout=0.5, max_len=5000):
+        super(EmbeddingEncoder, self).__init__()
+        self.block1 = EncoderBlock(inp_dim, num_conv, kernel, filters, num_heads, 
+                    dropout_p, dropout, max_len)
 
-	def forward(self, x):
-		return self.block1(x)
+    def forward(self, x):
+        return self.block1(x)
 
 
 class ContextQueryAttention(nn.Module):
-	"""This layer "combines" the context and query encoded embeddings from the
-		previous layers through attention. It is a standard context-query
-		attention layer that is used in other architectures, such as BiDAF.
+    """This layer "combines" the context and query encoded embeddings from the
+        previous layers through attention. It is a standard context-query
+        attention layer that is used in other architectures, such as BiDAF.
 
-		For now, this was basically taken from the given starter code (BiDAF)
-	"""
-	def __init__(self, hidden_size, drop_prob=0.1):
+        For now, this was basically taken from the given starter code (BiDAF)
+    """
+    def __init__(self, hidden_size, drop_prob=0.1):
         super(ContextQueryAttention, self).__init__()
         self.drop_prob = drop_prob
         self.c_weight = nn.Parameter(torch.zeros(hidden_size, 1))
@@ -124,45 +121,45 @@ class ContextQueryAttention(nn.Module):
 
     def get_similarity_matrix(self, context, query):
         c_len, q_len = context.size(1), query.size(1)
-        c = F.dropout(c, self.drop_prob, self.training)  # (bs, c_len, hid_size)
-        q = F.dropout(q, self.drop_prob, self.training)  # (bs, q_len, hid_size)
+        context = F.dropout(context, self.drop_prob, self.training)  # (bs, c_len, hid_size)
+        query = F.dropout(query, self.drop_prob, self.training)  # (bs, q_len, hid_size)
 
         # Shapes: (batch_size, c_len, q_len)
-        s0 = torch.matmul(c, self.c_weight).expand([-1, -1, q_len])
-        s1 = torch.matmul(q, self.q_weight).transpose(1, 2)\
+        s0 = torch.matmul(context, self.c_weight).expand([-1, -1, q_len])
+        s1 = torch.matmul(query, self.q_weight).transpose(1, 2)\
                                            .expand([-1, c_len, -1])
-        s2 = torch.matmul(c * self.cq_weight, q.transpose(1, 2))
+        s2 = torch.matmul(context * self.cq_weight, query.transpose(1, 2))
         s = s0 + s1 + s2 + self.bias
 
         return s
 
 
 class ModelEncoder(nn.Module):
-	"""Consists of a stack of encoder blocks. The QANet paper uses 7 of these blocks
-		per ModelEncoder, and a dimension of 512 (takes as input the previous attention
-		layer, which is of dimension 4 x 128 = 512).
-	"""
+    """Consists of a stack of encoder blocks. The QANet paper uses 7 of these blocks
+        per ModelEncoder, and a dimension of 512 (takes as input the previous attention
+        layer, which is of dimension 4 x 128 = 512).
+    """
 
-	def __init__(self, inp_dim, num_conv=2, kernel=7, filters=128, num_heads=8,
+    def __init__(self, inp_dim, num_conv=2, kernel=7, filters=512, num_heads=8,
                  dropout_p=0.1, dropout=0.5, max_len=5000, num_blocks=7):
-		super(ModelEncoder, self).__init__()
+        super(ModelEncoder, self).__init__()
 
-		# First block, in case of different input dimension
-		self.blocks = [EncoderBlock(inp_dim, num_conv=2, 
-									kernel=7, filters=128, 
-									num_heads=8, dropout_p=0.1, 
-									dropout=0.5, max_len=5000)]
-		# Add the other blocks
-		for i in range(num_blocks - 1):
-			self.blocks.append(EncoderBlock(inp_dim=filters, num_conv=2, 
-									kernel=7, filters=128, 
-									num_heads=8, dropout_p=0.1, 
-									dropout=0.5, max_len=5000))
+        # First block, in case of different input dimension
+        self.blocks = [EncoderBlock(inp_dim, num_conv=2, 
+                                    kernel=7, filters=512, 
+                                    num_heads=8, dropout_p=0.1, 
+                                    dropout=0.5, max_len=5000)]
+        # Add the other blocks
+        for i in range(num_blocks - 1):
+            self.blocks.append(EncoderBlock(inp_dim=filters, num_conv=2, 
+                                    kernel=7, filters=512, 
+                                    num_heads=8, dropout_p=0.1, 
+                                    dropout=0.5, max_len=5000))
 
-	def forward(self, x):
-		for enc_block in self.blocks:
-			x = enc_block(x)
-		return x
+    def forward(self, x):
+        for enc_block in self.blocks:
+            x = enc_block(x)
+        return x
 
 
 
@@ -180,8 +177,8 @@ class OutputLayer(nn.Module):
         self.W2 = nn.Linear(in_dim, out_dim)
 
     def forward(self, m0, m1, m2):
-        concat1 = torch.cat([model_enc0, model_enc1], dim=2)
-        concat2 = torch.cat([model_enc0, model_enc1], dim=2)
+        concat1 = torch.cat([m0, m1], dim=2)
+        concat2 = torch.cat([m0, m1], dim=2)
         lin_out1 = self.W1(concat1)
         lin_out2 = self.W2(concat2)
         lin_out1 = lin_out1.view(lin_out1.shape[:2])
@@ -189,4 +186,4 @@ class OutputLayer(nn.Module):
         start_prob = F.softmax(lin_out1)
         end_prob = F.softmax(lin_out2)
         return start_prob, end_prob
-        
+

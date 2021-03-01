@@ -85,7 +85,7 @@ class ds_conv(nn.Module):
             raise Exception("kernel size doesn't guarantee same input volume and output volume")
         self.depthwise = nn.Conv1d(input_channel, input_channel, kernel_size=k_size, padding=k_size // 2,
                                    groups=input_channel)
-        self.pointwise = nn.Conv1d(input_channel, output_channel, k_size=1, groups=1)
+        self.pointwise = nn.Conv1d(input_channel, output_channel, kernel_size=1, groups=1)
 
     def forward(self, x):
         x = self.pointwise(self.depthwise(x))
