@@ -1,8 +1,8 @@
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
+
 
 class EncoderBlock(nn.Module):
     """Starts with positional encoding, followed by multiple convolutional layers.
@@ -23,34 +23,30 @@ class EncoderBlock(nn.Module):
 
        Note: output of this layer should equal the number of filters 
     """
-    def __init__(self, inp_dim, num_conv=4, kernel=7, filters=128, num_heads=8, 
-                    dropout_p=0.1, dropout=0.5, max_len=5000):
+
+    def __init__(self, inp_dim, num_conv=4, kernel=7, filters=128, num_heads=8,
+                 dropout_p=0.1, dropout=0.5, max_len=5000):
         super(EncoderBlock, self).__init__()
         self.pos_enc = PositionalEncoding(inp_dim, dropout_p, max_len)
         self.num_conv = num_conv
         self.dropout = dropout
 
-        # TODO: Figure out depthwise separable
-        self.first_conv_layer = nn.Conv1d(in_channels=inp_dim,
-                                    out_channels=filters,
-                                    kernel_size=kernel,
-                                    padding=(kernel-1)//2,
-                                    groups=1)
-        self.conv_layer = nn.Conv1d(in_channels=filters,
-                                    out_channels=filters,
-                                    kernel_size=kernel,
-                                    padding=(kernel-1)//2,
-                                    groups=1)
+        # depthwise separable cnn layer for fewer parameters
+        self.first_conv_layer = ds_conv(input_channel=inp_dim,
+                                        output_channel=filters,
+                                        k_size=kernel)
+        self.conv_layer = ds_conv(input_channel=filters,
+                                  output_channel=filters,
+                                  k_size=kernel)
         self.self_attention = nn.MultiheadAttention(filters, num_heads)
         self.feed_forward = nn.Linear(filters, filters)
-
 
     def forward(self, x):
         # Positional encoding
         x = self.pos_enc(x)
         # Conv layers
         # First convolution
-        x = x.transpose(1,2)
+        x = x.transpose(1, 2)
         y = nn.LayerNorm(x.size()[1:])(x)
         x = self.first_conv_layer(y)
         for i in range(self.num_conv - 1):
@@ -71,6 +67,29 @@ class EncoderBlock(nn.Module):
         x = x.permute(1, 0, 2)
         return x
 
+
+class ds_conv(nn.Module):
+    """ Depthwise Separable Convolution for input into encoder block within
+            embedding encoder layer
+            In the original paper, kernel size is set to 7.
+
+            Args:
+                input_channel: number of input channel
+                output_channel: number of output channel
+                k_size: kernel size
+    """
+
+    def __init__(self, input_channel, output_channel, k_size):
+        super(ds_conv, self).__init__()
+        if k_size % 2 == 0:
+            raise Exception("kernel size doesn't guarantee same input volume and output volume")
+        self.depthwise = nn.Conv1d(input_channel, input_channel, kernel_size=k_size, padding=k_size // 2,
+                                   groups=input_channel)
+        self.pointwise = nn.Conv1d(input_channel, output_channel, k_size=1, groups=1)
+
+    def forward(self, x):
+        x = self.pointwise(self.depthwise(x))
+        return x
 
 
 class PositionalEncoding(nn.Module):
@@ -99,24 +118,3 @@ class PositionalEncoding(nn.Module):
     def forward(self, x):
         x = x + self.pe[:x.size(0), :]
         return self.dropout(x)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
