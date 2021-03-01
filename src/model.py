@@ -60,6 +60,12 @@ class QANet(nn.Module):
 												   max_len=5000)
 
         self.cq_att_layer = layers.ContextQueryAttention(conv_dim)
+
+		self.model_encoder = layers.ModelEncoder(conv_dim * 4, num_conv=2, kernel=7, 
+												   filters=conv_dim*4, num_heads=8, 
+												   dropout_p=0.1, dropout=0.5, 
+												   max_len=5000)
+		self.output = layers.OutputLayer(conv_dim * 8)
         
         # TODO: More layers!!
 
@@ -80,6 +86,13 @@ class QANet(nn.Module):
         # Context-Query Attention
         cq_att = self.cq_att_layer(c_emb_enc, q_emb_enc, cword_mask, qword_mask)
 
-        # TODO: Complete the rest of QANET forward computation
+        # Model Encoder Layer
+        model_enc0 = self.model_encoder(cq_att)
+        model_enc1 = self.model_encoder(model_enc0)
+        model_enc2 = self.model_encoder(model_enc1)
+
+        # Output Layer
+        start_probs, end_probs = self.output(model_enc0, model_enc1, model_enc2)
+        return start_probs, end_probs
 
 

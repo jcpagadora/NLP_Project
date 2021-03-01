@@ -137,32 +137,56 @@ class ContextQueryAttention(nn.Module):
         return s
 
 
+class ModelEncoder(nn.Module):
+	"""Consists of a stack of encoder blocks. The QANet paper uses 7 of these blocks
+		per ModelEncoder, and a dimension of 512 (takes as input the previous attention
+		layer, which is of dimension 4 x 128 = 512).
+	"""
+
+	def __init__(self, inp_dim, num_conv=2, kernel=7, filters=128, num_heads=8,
+                 dropout_p=0.1, dropout=0.5, max_len=5000, num_blocks=7):
+		super(ModelEncoder, self).__init__()
+
+		# First block, in case of different input dimension
+		self.blocks = [EncoderBlock(inp_dim, num_conv=2, 
+									kernel=7, filters=128, 
+									num_heads=8, dropout_p=0.1, 
+									dropout=0.5, max_len=5000)]
+		# Add the other blocks
+		for i in range(num_blocks - 1):
+			self.blocks.append(EncoderBlock(inp_dim=filters, num_conv=2, 
+									kernel=7, filters=128, 
+									num_heads=8, dropout_p=0.1, 
+									dropout=0.5, max_len=5000))
+
+	def forward(self, x):
+		for enc_block in self.blocks:
+			x = enc_block(x)
+		return x
 
 
 
+class OutputLayer(nn.Module):
+    """Final layer of the QANet model. Takes as input the three model encoders in
+        the previous layer, m0, m1, m2. For predicting the start-probability, computes
+        p1 = softmax(W1[m0 : m1]).
+        Similarly, predicts end-probability by computing
+        p2 = softmax(W2[m0 : m2])
+    """
 
+    def __init__(self, in_dim, out_dim=1):
+        super(OutputLayer, self).__init__()
+        self.W1 = nn.Linear(in_dim, out_dim)
+        self.W2 = nn.Linear(in_dim, out_dim)
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+    def forward(self, m0, m1, m2):
+        concat1 = torch.cat([model_enc0, model_enc1], dim=2)
+        concat2 = torch.cat([model_enc0, model_enc1], dim=2)
+        lin_out1 = self.W1(concat1)
+        lin_out2 = self.W2(concat2)
+        lin_out1 = lin_out1.view(lin_out1.shape[:2])
+        lin_out2 = lin_out1.view(lin_out2.shape[:2])
+        start_prob = F.softmax(lin_out1)
+        end_prob = F.softmax(lin_out2)
+        return start_prob, end_prob
+        
