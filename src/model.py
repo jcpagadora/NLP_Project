@@ -88,6 +88,6 @@ class QANet(nn.Module):
         model_enc2 = self.model_encoder(model_enc1)
 
         # Output Layer
-        start_probs, end_probs = self.output(model_enc0, model_enc1, model_enc2)
+        start_probs, end_probs = self.output(model_enc0, model_enc1, model_enc2, cword_idxs)
         return start_probs, end_probs
 

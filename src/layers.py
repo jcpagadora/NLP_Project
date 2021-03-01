@@ -179,14 +179,12 @@ class OutputLayer(nn.Module):
         self.W1 = nn.Linear(in_dim, out_dim)
         self.W2 = nn.Linear(in_dim, out_dim)
 
-    def forward(self, m0, m1, m2):
+    def forward(self, m0, m1, m2, mask):
         concat1 = torch.cat([m0, m1], dim=2)
         concat2 = torch.cat([m1, m2], dim=2)
         lin_out1 = self.W1(concat1)
         lin_out2 = self.W2(concat2)
-        lin_out1 = lin_out1.view(lin_out1.shape[:2])
-        lin_out2 = lin_out1.view(lin_out2.shape[:2])
-        start_prob = F.softmax(lin_out1, dim=-1)
-        end_prob = F.softmax(lin_out2, dim=-1)
+        start_prob = masked_softmax(lin_out1.squeeze(), mask, log_softmax=True)
+        end_prob = masked_softmax(lin_out2.squeeze(), mask, log_softmax=True)
         return start_prob, end_prob
         
