@@ -145,16 +145,17 @@ class ModelEncoder(nn.Module):
 	def __init__(self, inp_dim, num_conv=2, kernel=7, filters=128, num_heads=8,
                  dropout_p=0.1, dropout=0.5, max_len=5000, num_blocks=7):
 		super(ModelEncoder, self).__init__()
+		self.filters = filters
 
 		# First block, in case of different input dimension
 		self.blocks = [EncoderBlock(inp_dim, num_conv=2, 
-									kernel=7, filters=128, 
+									kernel=7, filters=self.filters,
 									num_heads=8, dropout_p=0.1, 
 									dropout=0.5, max_len=5000)]
 		# Add the other blocks
 		for i in range(num_blocks - 1):
-			self.blocks.append(EncoderBlock(inp_dim=filters, num_conv=2, 
-									kernel=7, filters=128, 
+			self.blocks.append(EncoderBlock(inp_dim=self.filters, num_conv=2,
+									kernel=7, filters=self.filters,
 									num_heads=8, dropout_p=0.1, 
 									dropout=0.5, max_len=5000))
 
@@ -179,13 +180,13 @@ class OutputLayer(nn.Module):
         self.W2 = nn.Linear(in_dim, out_dim)
 
     def forward(self, m0, m1, m2):
-        concat1 = torch.cat([model_enc0, model_enc1], dim=2)
-        concat2 = torch.cat([model_enc0, model_enc1], dim=2)
+        concat1 = torch.cat([m0, m1], dim=2)
+        concat2 = torch.cat([m1, m2], dim=2)
         lin_out1 = self.W1(concat1)
         lin_out2 = self.W2(concat2)
         lin_out1 = lin_out1.view(lin_out1.shape[:2])
         lin_out2 = lin_out1.view(lin_out2.shape[:2])
-        start_prob = F.softmax(lin_out1)
-        end_prob = F.softmax(lin_out2)
+        start_prob = F.softmax(lin_out1, dim=-1)
+        end_prob = F.softmax(lin_out2, dim=-1)
         return start_prob, end_prob
         
