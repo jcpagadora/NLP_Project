@@ -19,14 +19,14 @@ class Embedding(nn.Module):
         char_emb_dim (int): Dimension of character embeddings
         drop_prob (float): Probability of zero-ing out activations
     """
-    def __init__(self, word_vectors, char_size, char_emb_dim, drop_prob):
+    def __init__(self, word_vectors, char_vectors, char_emb_dim, drop_prob):
         super(Embedding, self).__init__()
         self.drop_prob = drop_prob
         self.word_embed = nn.Embedding.from_pretrained(word_vectors)
-        self.char_embed = nn.Embedding(char_size, char_emb_dim)
+        self.char_embed = nn.Embedding.from_pretrained(char_vectors, freeze = False)
         
         # TODO: figure out highway encoder, if this is right
-        self.hwy = HighwayEncoder(2, word_vectors.size(1) + char_emb_dim)
+        self.hwy = HighwayEncoder(2, word_vectors.size(1) + char_vectors.size(1))
 
     def forward(self, word_idxs, char_idxs):
         word_emb = self.word_embed(word_idxs)   # (batch_size, seq_len, embed_size)

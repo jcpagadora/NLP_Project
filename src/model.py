@@ -27,24 +27,25 @@ class QANet(nn.Module):
 
     Args:
         word_vectors (torch.Tensor): Pre-trained word vectors.
+        TODO: double check char vectors
         char_size (int): Number of characters in char-level vocabulary
         char_emb_dim (int): Dimensionality of character-level embedding
         conv_dim (int): For conv layers, this is number of filters, but used throughout as hidden_size
         drop_prob (float): Dropout probability.
     """
-    def __init__(self, word_vectors, char_size, char_emb_dim=200, conv_dim=128, drop_prob=0.5):
+    def __init__(self, word_vectors, char_vectors, conv_dim=128, drop_prob=0.5):
 
         super(QANet, self).__init__()
         self.c_ember = Embedding(word_vectors=word_vectors,
-                                    char_size=char_size,
-                                    char_emb_dim=char_emb_dim,
+                                    char_vectors=char_vectors,
+                                    char_emb_dim=char_vectors.size(1),
                                     drop_prob=drop_prob)
         self.q_ember = Embedding(word_vectors=word_vectors,
-                                    char_size=char_size,
-                                    char_emb_dim=char_emb_dim,
+                                    char_vectors=char_vectors,
+                                    char_emb_dim=char_vectors.size(1),
                                     drop_prob=drop_prob)
 
-       	in_dim = word_vectors.size(1) + char_emb_dim
+       	in_dim = word_vectors.size(1) + char_vectors.size(1)
 
         self.c_emb_encer = EmbeddingEncoder(in_dim, num_conv=4, kernel=7, 
                                                    filters=conv_dim, num_heads=8, 
