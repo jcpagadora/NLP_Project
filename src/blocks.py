@@ -13,7 +13,7 @@ class EncoderBlock(nn.Module):
 
        Args:
             inp_dim (int): Dimension of the input (after positional encoding)
-             num_conv (int): Number of initial convolutional layers
+            num_conv (int): Number of initial convolutional layers
             kernel (int): Kernel size of each convolution
             filters (int): Number of filters
             num_heads (int): Number of heads for self-attention
