@@ -57,7 +57,7 @@ class QANet(nn.Module):
                                                    dropout_p=0.1, dropout=0.5, 
                                                    max_len=5000)
 
-        self.cq_att_layer = ContextQueryAttention(conv_dim)
+        self.cq_att_layer = BiDAFAttention(conv_dim)
 
         self.model_encoder = ModelEncoder(conv_dim * 4, num_conv=2, kernel=7, 
                                                    filters=conv_dim*4, num_heads=8, 
