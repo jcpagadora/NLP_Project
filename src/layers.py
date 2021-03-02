@@ -1,3 +1,5 @@
+import math
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -31,11 +33,10 @@ class Embedding(nn.Module):
 	def forward(self, word_idxs, char_idxs):
 		word_emb = self.word_embed(word_idxs)  # (batch_size, seq_len, embed_size)
 		char_emb = self.char_embed(char_idxs)  # (batch_size, seq_len, word_len, char_emb_dim)
-
 		# Need to take maximum over rows of embedding matrix for each word
-		char_emb = char_emb.max(-2).values  # (batch_size, seq_len, char_emb_dim)
+		char_emb, _ = torch.max(char_emb, dim=-2)  # (batch_size, seq_len, char_emb_dim)
 		# Concatenate the embedding
-		emb = torch.cat((char_emb.T, word_emb.T)).T
+		emb = torch.cat([char_emb, word_emb], dim=2)
 
 		emb = F.dropout(emb, self.drop_prob, self.training)
 
@@ -248,3 +249,5 @@ class BiDAFAttention(nn.Module):
 		s = s0 + s1 + s2 + self.bias
 
 		return s
+
+
