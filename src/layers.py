@@ -91,10 +91,10 @@ class EmbeddingEncoder(nn.Module):
         self-attention, then a feed forward layer
     """
 
-    def __init__(self, inp_dim, num_conv=4, kernel=7, filters=128, num_heads=8,
+    def __init__(self, inp_dim, num_conv=4, kernel=7, num_heads=8,
                  dropout_p=0.1, dropout=0.5, max_len=5000):
         super(EmbeddingEncoder, self).__init__()
-        self.block1 = EncoderBlock(inp_dim, num_conv, kernel, filters, num_heads,
+        self.block1 = EncoderBlock(inp_dim, num_conv, kernel, num_heads,
                                    dropout_p, dropout, max_len)
 
     def forward(self, x):
@@ -157,22 +157,13 @@ class ModelEncoder(nn.Module):
         layer, which is of dimension 4 x 128 = 512).
     """
 
-    def __init__(self, inp_dim, num_conv=2, kernel=7, filters=128, num_heads=8,
+    def __init__(self, inp_dim, num_conv=2, kernel=7, num_heads=8,
                  dropout_p=0.1, dropout=0.5, max_len=5000, num_blocks=7):
         super(ModelEncoder, self).__init__()
-        self.filters = filters
 
-        # First block, in case of different input dimension
-        self.blocks = [EncoderBlock(inp_dim, num_conv=2,
-                                    kernel=7, filters=self.filters,
+        self.blocks = nn.ModuleList([EncoderBlock(inp_dim, num_conv=2, kernel=7,
                                     num_heads=8, dropout_p=0.1,
-                                    dropout=0.5, max_len=5000)]
-        # Add the other blocks
-        for i in range(num_blocks - 1):
-            self.blocks.append(EncoderBlock(inp_dim=self.filters, num_conv=2,
-                                            kernel=7, filters=self.filters,
-                                            num_heads=8, dropout_p=0.1,
-                                            dropout=0.5, max_len=5000))
+                                    dropout=0.5, max_len=5000) for _ in range(num_blocks)])
 
     def forward(self, x):
         for enc_block in self.blocks:
@@ -209,7 +200,7 @@ class BiDAFAttention(nn.Module):
     The context attends to the query and the query attends to the context.
     The output of this layer is the concatenation of [context, c2q_attention,
     context * c2q_attention, context * q2c_attention]. This concatenation allows
-    the attention vector at each timestep, along with the embeddings from
+    the attention vector at each timestep, along with the output from
     previous layers, to flow through the attention layer to the modeling layer.
     The output has shape (batch_size, context_len, 8 * hidden_size).
     Args:

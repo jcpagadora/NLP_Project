@@ -26,25 +26,24 @@ class EncoderBlock(nn.Module):
        Note: output of this layer should equal the number of filters
      """
 
-    def __init__(self, inp_dim, num_conv=2, kernel=7, filters=128, num_heads=8,
+    def __init__(self, inp_dim, num_conv=2, kernel=7, num_heads=8,
                  dropout_p=0.1, dropout=0.5, max_len=5000):
         super(EncoderBlock, self).__init__()
         self.pos_enc = PositionalEncoding(inp_dim, dropout_p, max_len)
         self.num_conv = num_conv
         self.dropout = dropout
-        self.filters = filters
         # depthwise separable cnn layer for fewer parameters
-        self.first_conv_layer = ds_conv(input_channel=inp_dim, output_channel=self.filters, k_size=kernel)
-        self.conv_layers = nn.ModuleList([ds_conv(input_channel=filters, output_channel=self.filters,
+        self.first_conv_layer = ds_conv(input_channel=inp_dim, output_channel=inp_dim, k_size=kernel)
+        self.conv_layers = nn.ModuleList([ds_conv(input_channel=inp_dim, output_channel=inp_dim,
                                                   k_size=kernel) for _ in range(num_conv-1)])
         self.first_layer_norm = nn.LayerNorm(inp_dim)
-        self.layer_norms = nn.ModuleList([nn.LayerNorm(filters) for _ in range(num_conv-1)])
-        self.att_layer_norm = nn.LayerNorm(filters)
-        self.self_attention = CausalSelfAttention(self.filters, num_heads, dropout_p)
-        self.feed_layer_norm = nn.LayerNorm(filters)
-        self.proj1 = nn.Linear(filters, filters)
+        self.layer_norms = nn.ModuleList([nn.LayerNorm(inp_dim) for _ in range(num_conv-1)])
+        self.att_layer_norm = nn.LayerNorm(inp_dim)
+        self.self_attention = CausalSelfAttention(inp_dim, num_heads, dropout_p)
+        self.feed_layer_norm = nn.LayerNorm(inp_dim)
+        self.proj1 = nn.Linear(inp_dim, inp_dim)
         self.nonLinear = nn.ReLU()
-        self.proj2 = nn.Linear(filters, filters)
+        self.proj2 = nn.Linear(inp_dim, inp_dim)
 
     def forward(self, x):
         # TODO Figure out mask in attention and every other dropout

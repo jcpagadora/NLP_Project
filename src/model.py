@@ -43,25 +43,25 @@ class QANet(nn.Module):
                                     char_vectors=char_vectors,
                                     hidden_size=hidden_size,)
 
-        in_dim = 100
+        in_dim = hidden_size
 
         self.c_emb_encer = EmbeddingEncoder(in_dim, num_conv=4, kernel=7, 
-                                                   filters=conv_dim, num_heads=8, 
+                                                    num_heads=8,
                                                    dropout_p=0.1, dropout=0.5, 
                                                    max_len=5000)
 
         self.q_emb_encer = EmbeddingEncoder(in_dim, num_conv=4, kernel=7, 
-                                                   filters=conv_dim, num_heads=8, 
+                                                    num_heads=8,
                                                    dropout_p=0.1, dropout=0.5, 
                                                    max_len=5000)
 
-        self.cq_att_layer = BiDAFAttention(conv_dim)
+        self.cq_att_layer = BiDAFAttention(in_dim)
 
-        self.model_encoder = ModelEncoder(conv_dim * 4, num_conv=2, kernel=7, 
-                                                   filters=conv_dim*4, num_heads=8, 
+        self.model_encoder = ModelEncoder(in_dim * 4, num_conv=2, kernel=7,
+                                                    num_heads=8,
                                                    dropout_p=0.1, dropout=0.5, 
                                                    max_len=5000)
-        self.output = OutputLayer(conv_dim * 8)
+        self.output = OutputLayer(in_dim * 8)
 
 
     def forward(self, cword_idxs, cchar_idxs, qword_idxs, qchar_idxs):
