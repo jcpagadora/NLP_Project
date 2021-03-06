@@ -1,4 +1,8 @@
-import math
+"""Assortment of layers for use in models.py.
+
+Author:
+    Chris Chute (chute@stanford.edu)
+"""
 
 import torch
 import torch.nn as nn
@@ -6,47 +10,118 @@ import torch.nn.functional as F
 
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 from util import masked_softmax
-from blocks import *
 
+
+from torch.nn.utils.rnn import pack_padded_sequence, PackedSequence
+
+"""
+def hotfix_pack_padded_sequence(input, lengths, batch_first=False, enforce_sorted=True):
+    lengths = torch.as_tensor(lengths, dtype=torch.int64)
+    lengths = lengths.cpu()
+    if enforce_sorted:
+        sorted_indices = None
+    else:
+        lengths, sorted_indices = torch.sort(lengths, descending=True)
+        sorted_indices = sorted_indices.to(input.device)
+        batch_dim = 0 if batch_first else 1
+        input = input.index_select(batch_dim, sorted_indices)
+
+    data, batch_sizes = \
+        torch._C._VariableFunctions._pack_padded_sequence(input, lengths, batch_first)
+    return PackedSequence(data, batch_sizes, sorted_indices)
+"""
 
 class Embedding(nn.Module):
-	"""Input embedding layer for QANet.
+    """Embedding layer used by BiDAF, without the character-level component.
 
-   	Includes character embeddings and a 2-layer Highway Encoder
+    Word-level embeddings are further refined using a 2-layer Highway Encoder
+    (see `HighwayEncoder` class for details).
 
     Args:
         word_vectors (torch.Tensor): Pre-trained word vectors.
-        char_size (int): Number of characters in the character-vocabulary
-        char_emb_dim (int): Dimension of character embeddings
+        hidden_size (int): Size of hidden activations.
         drop_prob (float): Probability of zero-ing out activations
     """
+    def __init__(self, word_vectors, char_vectors, hidden_size, drop_prob):
+        super(Embedding, self).__init__()
+        self.drop_prob = drop_prob
+        self.word_embed = nn.Embedding.from_pretrained(word_vectors)
+        self.char_embed = nn.Embedding.from_pretrained(char_vectors, freeze=False)
+        self.proj = nn.Linear(word_vectors.size(1) + char_vectors.size(1), hidden_size, bias=False)
+        self.proj2 = nn.Linear(word_vectors.size(1), hidden_size, bias=False)
+        self.conv = nn.Conv1d(char_vectors.size(1), char_vectors.size(1), kernel_size=5)
+        self.hwy = HighwayEncoder(2, hidden_size)
+        self.CNN = CNN(5,  char_vectors.size(1),  char_vectors.size(1))
 
-	def __init__(self, word_vectors, char_vectors, char_emb_dim, drop_prob):
-		super(Embedding, self).__init__()
-		self.drop_prob = drop_prob
-		self.word_embed = nn.Embedding.from_pretrained(word_vectors)
-		self.char_embed = nn.Embedding.from_pretrained(char_vectors, freeze=False)
+    def forward(self, x, y):
+        word_emb = self.word_embed(x)   # (batch_size, seq_len, embed_size)
+        word_emb = F.dropout(word_emb, self.drop_prob, self.training)
 
-		# TODO: figure out highway encoder, if this is right
-		self.hwy = HighwayEncoder(2, word_vectors.size(1) + char_vectors.size(1))
+        # TODO 2d or 1d? do we want to use sentence info? 2d needs padding
+        original = y.size()
+        if len(original) == 3:
+            char_emb = self.char_embed(y)
+            char_dim = char_emb.size()
+            char_emb = char_emb.reshape(char_dim[0] * char_dim[1], char_dim[2], char_dim[3])
+            char_emb = char_emb.permute(0, 2, 1)
+            char_emb = self.conv(char_emb)
+            char_emb, _ = torch.max(char_emb, dim=-1)
+            char_emb = char_emb.reshape(char_dim[0], char_dim[1], 64)
 
-	def forward(self, word_idxs, char_idxs):
-		word_emb = self.word_embed(word_idxs)  # (batch_size, seq_len, embed_size)
-		char_emb = self.char_embed(char_idxs)  # (batch_size, seq_len, word_len, char_emb_dim)
-		# Need to take maximum over rows of embedding matrix for each word
-		char_emb, _ = torch.max(char_emb, dim=-2)  # (batch_size, seq_len, char_emb_dim)
-		# Concatenate the embedding
-		emb = torch.cat([char_emb, word_emb], dim=2)
+            char_emb = F.dropout(char_emb, self.drop_prob, self.training)
+            concat = torch.cat([word_emb, char_emb], dim=-1)
+            emb = self.proj(concat)  # (batch_size, seq_len, hidden_size)
+        else:
+            emb = self.proj2(word_emb)
 
-		emb = F.dropout(emb, self.drop_prob, self.training)
+        emb = self.hwy(emb)  # (batch_size, seq_len, hidden_size)
 
-		return emb
+        return emb
+
+        """
+        char_embeddings = self.char_embed(y)
+        og_shape = char_embeddings.shape
+        char_embeddings = char_embeddings.transpose(-1, -2)  # (batch_size, seq_len, char_embed_dim from GloVe)
+        first  = char_embeddings.shape[0]*char_embeddings.shape[1] if len(char_embeddings.shape) == 4 else char_embeddings.shape[0]
+        char_embeddings_reshaped = char_embeddings.view(first,
+                                                        char_embeddings.shape[-2], char_embeddings.shape[-1])
+        char_embeddings = self.CNN(char_embeddings_reshaped)
+        char_emb = char_embeddings.view(og_shape[0], og_shape[1], 64)
+        
+        2d 
+         original = str(y.size())
+            char_emb = self.char_embed(y)
+            lookup = str(char_emb.size())
+            f = open("new_error.txt", "a")
+            f.write("Original " + original + "\n")
+            f.write("lookup " + lookup + "\n")
+            f.close()
+            char_emb = char_emb.permute(0, 3, 1, 2)
+            char_emb = self.conv(char_emb)
+            char_emb, _ = torch.max(char_emb, dim=-1)
+            char_emb = char_emb.permute(0, 2, 1)
+        
+        """
 
 
-# TODO: Fill out classes for all other layers
+
+class CNN(nn.Module):
+    def __init__(self, k, in_channels, out_channels):
+        super(CNN, self).__init__()
+        self.k = k
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        self.conv = nn.Conv1d(in_channels, out_channels, k)
+
+    def forward(self, x):
+        x = self.conv(x)
+        x = nn.functional.relu(x)
+        x = nn.functional.max_pool1d(x, x.shape[-1])
+
+        return torch.squeeze(x)
 
 class HighwayEncoder(nn.Module):
-	"""Encode an input sequence using a highway network.
+    """Encode an input sequence using a highway network.
 
     Based on the paper:
     "Highway Networks"
@@ -57,143 +132,70 @@ class HighwayEncoder(nn.Module):
         num_layers (int): Number of layers in the highway encoder.
         hidden_size (int): Size of hidden activations.
     """
+    def __init__(self, num_layers, hidden_size):
+        super(HighwayEncoder, self).__init__()
+        self.transforms = nn.ModuleList([nn.Linear(hidden_size, hidden_size)
+                                         for _ in range(num_layers)])
+        self.gates = nn.ModuleList([nn.Linear(hidden_size, hidden_size)
+                                    for _ in range(num_layers)])
 
-	def __init__(self, num_layers, hidden_size):
-		super(HighwayEncoder, self).__init__()
-		self.transforms = nn.ModuleList([nn.Linear(hidden_size, hidden_size)
-		                                 for _ in range(num_layers)])
-		self.gates = nn.ModuleList([nn.Linear(hidden_size, hidden_size)
-		                            for _ in range(num_layers)])
+    def forward(self, x):
+        for gate, transform in zip(self.gates, self.transforms):
+            # Shapes of g, t, and x are all (batch_size, seq_len, hidden_size)
+            g = torch.sigmoid(gate(x))
+            t = F.relu(transform(x))
+            x = g * t + (1 - g) * x
 
-	def forward(self, x):
-		for gate, transform in zip(self.gates, self.transforms):
-			# Shapes of g, t, and x are all (batch_size, seq_len, hidden_size)
-			g = torch.sigmoid(gate(x))
-			t = F.relu(transform(x))
-			x = g * t + (1 - g) * x
-		return x
-
-
-class EmbeddingEncoder(nn.Module):
-	"""Embedding Encoder layer consists of a stack of encoder blocks,
-		each encoder block consists of several convolutional layers, then
-		self-attention, then a feed forward layer
-	"""
-
-	def __init__(self, inp_dim, num_conv=4, kernel=7, filters=128, num_heads=8,
-	             dropout_p=0.1, dropout=0.5, max_len=5000):
-		super(EmbeddingEncoder, self).__init__()
-		self.block1 = EncoderBlock(inp_dim, num_conv, kernel, filters, num_heads,
-		                           dropout_p, dropout, max_len)
-
-	def forward(self, x):
-		return self.block1(x)
+        return x
 
 
-class ContextQueryAttention(nn.Module):
-	"""This layer "combines" the context and query encoded embeddings from the
-        previous layers through attention. It is a standard context-query
-        attention layer that is used in other architectures, such as BiDAF.
-        For now, this was basically taken from the given starter code (BiDAF)
-	"""
+class RNNEncoder(nn.Module):
+    """General-purpose layer for encoding a sequence using a bidirectional RNN.
 
-	def __init__(self, hidden_size, drop_prob=0.1):
-		super(ContextQueryAttention, self).__init__()
-		self.drop_prob = drop_prob
-		self.c_weight = nn.Parameter(torch.zeros(hidden_size, 1))
-		self.q_weight = nn.Parameter(torch.zeros(hidden_size, 1))
-		self.cq_weight = nn.Parameter(torch.zeros(1, 1, hidden_size))
-		for weight in (self.c_weight, self.q_weight, self.cq_weight):
-			nn.init.xavier_uniform_(weight)
-		self.bias = nn.Parameter(torch.zeros(1))
+    Encoded output is the RNN's hidden state at each position, which
+    has shape `(batch_size, seq_len, hidden_size * 2)`.
 
-	def forward(self, context, query, c_mask, q_mask):
-		batch_size, c_len, _ = context.size()
-		q_len = query.size(1)
-		s = self.get_similarity_matrix(context, query)  # (batch_size, c_len, q_len)
-		c_mask = c_mask.view(batch_size, c_len, 1)  # (batch_size, c_len, 1)
-		q_mask = q_mask.view(batch_size, 1, q_len)  # (batch_size, 1, q_len)
-		s1 = masked_softmax(s, q_mask, dim=2)  # (batch_size, c_len, q_len)
-		s2 = masked_softmax(s, c_mask, dim=1)  # (batch_size, c_len, q_len)
-
-		# (bs, c_len, q_len) x (bs, q_len, hid_size) => (bs, c_len, hid_size)
-		a = torch.bmm(s1, query)
-		# (bs, c_len, c_len) x (bs, c_len, hid_size) => (bs, c_len, hid_size)
-		b = torch.bmm(torch.bmm(s1, s2.transpose(1, 2)), context)
-
-		x = torch.cat([context, a, context * a, context * b], dim=2)  # (bs, c_len, 4 * hid_size)
-
-		return x
-
-	def get_similarity_matrix(self, context, query):
-		c_len, q_len = context.size(1), query.size(1)
-		c = F.dropout(context, self.drop_prob, self.training)  # (bs, c_len, hid_size)
-		q = F.dropout(query, self.drop_prob, self.training)  # (bs, q_len, hid_size)
-
-		# Shapes: (batch_size, c_len, q_len)
-		s0 = torch.matmul(c, self.c_weight).expand([-1, -1, q_len])
-		s1 = torch.matmul(q, self.q_weight).transpose(1, 2) \
-			.expand([-1, c_len, -1])
-		s2 = torch.matmul(c * self.cq_weight, q.transpose(1, 2))
-		s = s0 + s1 + s2 + self.bias
-
-		return s
-
-
-class ModelEncoder(nn.Module):
-	"""Consists of a stack of encoder blocks. The QANet paper uses 7 of these blocks
-		per ModelEncoder, and a dimension of 512 (takes as input the previous attention
-		layer, which is of dimension 4 x 128 = 512).
-	"""
-
-	def __init__(self, inp_dim, num_conv=2, kernel=7, filters=128, num_heads=8,
-	             dropout_p=0.1, dropout=0.5, max_len=5000, num_blocks=7):
-		super(ModelEncoder, self).__init__()
-		self.filters = filters
-
-		# First block, in case of different input dimension
-		self.blocks = [EncoderBlock(inp_dim, num_conv=2,
-		                            kernel=7, filters=self.filters,
-		                            num_heads=8, dropout_p=0.1,
-		                            dropout=0.5, max_len=5000)]
-		# Add the other blocks
-		for i in range(num_blocks - 1):
-			self.blocks.append(EncoderBlock(inp_dim=self.filters, num_conv=2,
-			                                kernel=7, filters=self.filters,
-			                                num_heads=8, dropout_p=0.1,
-			                                dropout=0.5, max_len=5000))
-
-	def forward(self, x):
-		for enc_block in self.blocks:
-			x = enc_block(x)
-		return x
-
-
-class OutputLayer(nn.Module):
-	"""Final layer of the QANet model. Takes as input the three model encoders in
-        the previous layer, m0, m1, m2. For predicting the start-probability, computes
-        p1 = softmax(W1[m0 : m1]).
-        Similarly, predicts end-probability by computing
-        p2 = softmax(W2[m0 : m2])
+    Args:
+        input_size (int): Size of a single timestep in the input.
+        hidden_size (int): Size of the RNN hidden state.
+        num_layers (int): Number of layers of RNN cells to use.
+        drop_prob (float): Probability of zero-ing out activations.
     """
+    def __init__(self,
+                 input_size,
+                 hidden_size,
+                 num_layers,
+                 drop_prob=0.):
+        super(RNNEncoder, self).__init__()
+        self.drop_prob = drop_prob
+        self.rnn = nn.LSTM(input_size, hidden_size, num_layers,
+                           batch_first=True,
+                           bidirectional=True,
+                           dropout=drop_prob if num_layers > 1 else 0.)
 
-	def __init__(self, in_dim, out_dim=1):
-		super(OutputLayer, self).__init__()
-		self.W1 = nn.Linear(in_dim, out_dim)
-		self.W2 = nn.Linear(in_dim, out_dim)
+    def forward(self, x, lengths):
+        # Save original padded length for use by pad_packed_sequence
+        orig_len = x.size(1)
+        # Sort by length and pack sequence for RNN
+        lengths, sort_idx = lengths.sort(0, descending=True)
+        x = x[sort_idx]     # (batch_size, seq_len, input_size)
+        x = pack_padded_sequence(x, lengths, batch_first=True)
+        # Apply RNN
+        x, _ = self.rnn(x)  # (batch_size, seq_len, 2 * hidden_size)
 
-	def forward(self, m0, m1, m2, mask):
-		concat1 = torch.cat([m0, m1], dim=2)
-		concat2 = torch.cat([m1, m2], dim=2)
-		lin_out1 = self.W1(concat1)
-		lin_out2 = self.W2(concat2)
-		start_prob = masked_softmax(lin_out1.squeeze(), mask, log_softmax=True)
-		end_prob = masked_softmax(lin_out2.squeeze(), mask, log_softmax=True)
-		return start_prob, end_prob
+        # Unpack and reverse sort
+        x, _ = pad_packed_sequence(x, batch_first=True, total_length=orig_len)
+        _, unsort_idx = sort_idx.sort(0)
+        x = x[unsort_idx]   # (batch_size, seq_len, 2 * hidden_size)
+
+        # Apply dropout (RNN applies dropout after all but the last layer)
+        x = F.dropout(x, self.drop_prob, self.training)
+
+        return x
 
 
 class BiDAFAttention(nn.Module):
-	"""Bidirectional attention originally used by BiDAF.
+    """Bidirectional attention originally used by BiDAF.
 
     Bidirectional attention computes attention in two directions:
     The context attends to the query and the query attends to the context.
@@ -207,47 +209,93 @@ class BiDAFAttention(nn.Module):
         hidden_size (int): Size of hidden activations.
         drop_prob (float): Probability of zero-ing out activations.
     """
+    def __init__(self, hidden_size, drop_prob=0.1):
+        super(BiDAFAttention, self).__init__()
+        self.drop_prob = drop_prob
+        self.c_weight = nn.Parameter(torch.zeros(hidden_size, 1))
+        self.q_weight = nn.Parameter(torch.zeros(hidden_size, 1))
+        self.cq_weight = nn.Parameter(torch.zeros(1, 1, hidden_size))
+        for weight in (self.c_weight, self.q_weight, self.cq_weight):
+            nn.init.xavier_uniform_(weight)
+        self.bias = nn.Parameter(torch.zeros(1))
 
-	def __init__(self, hidden_size, drop_prob=0.1):
-		super(BiDAFAttention, self).__init__()
-		self.drop_prob = drop_prob
-		self.c_weight = nn.Parameter(torch.zeros(hidden_size, 1))
-		self.q_weight = nn.Parameter(torch.zeros(hidden_size, 1))
-		self.cq_weight = nn.Parameter(torch.zeros(1, 1, hidden_size))
-		for weight in (self.c_weight, self.q_weight, self.cq_weight):
-			nn.init.xavier_uniform_(weight)
-		self.bias = nn.Parameter(torch.zeros(1))
+    def forward(self, c, q, c_mask, q_mask):
+        batch_size, c_len, _ = c.size()
+        q_len = q.size(1)
+        s = self.get_similarity_matrix(c, q)        # (batch_size, c_len, q_len)
+        c_mask = c_mask.view(batch_size, c_len, 1)  # (batch_size, c_len, 1)
+        q_mask = q_mask.view(batch_size, 1, q_len)  # (batch_size, 1, q_len)
+        s1 = masked_softmax(s, q_mask, dim=2)       # (batch_size, c_len, q_len)
+        s2 = masked_softmax(s, c_mask, dim=1)       # (batch_size, c_len, q_len)
 
-	def forward(self, c, q, c_mask, q_mask):
-		batch_size, c_len, _ = c.size()
-		q_len = q.size(1)
-		s = self.get_similarity_matrix(c, q)  # (batch_size, c_len, q_len)
-		c_mask = c_mask.view(batch_size, c_len, 1)  # (batch_size, c_len, 1)
-		q_mask = q_mask.view(batch_size, 1, q_len)  # (batch_size, 1, q_len)
-		s1 = masked_softmax(s, q_mask, dim=2)  # (batch_size, c_len, q_len)
-		s2 = masked_softmax(s, c_mask, dim=1)  # (batch_size, c_len, q_len)
+        # (bs, c_len, q_len) x (bs, q_len, hid_size) => (bs, c_len, hid_size)
+        a = torch.bmm(s1, q)
+        # (bs, c_len, c_len) x (bs, c_len, hid_size) => (bs, c_len, hid_size)
+        b = torch.bmm(torch.bmm(s1, s2.transpose(1, 2)), c)
 
-		# (bs, c_len, q_len) x (bs, q_len, hid_size) => (bs, c_len, hid_size)
-		a = torch.bmm(s1, q)
-		# (bs, c_len, c_len) x (bs, c_len, hid_size) => (bs, c_len, hid_size)
-		b = torch.bmm(torch.bmm(s1, s2.transpose(1, 2)), c)
+        x = torch.cat([c, a, c * a, c * b], dim=2)  # (bs, c_len, 4 * hid_size)
 
-		x = torch.cat([c, a, c * a, c * b], dim=2)  # (bs, c_len, 4 * hid_size)
+        return x
 
-		return x
+    def get_similarity_matrix(self, c, q):
+        """Get the "similarity matrix" between context and query (using the
+        terminology of the BiDAF paper).
 
-	def get_similarity_matrix(self, context, query):
-		c_len, q_len = context.size(1), query.size(1)
-		c = F.dropout(context, self.drop_prob, self.training)  # (bs, c_len, hid_size)
-		q = F.dropout(query, self.drop_prob, self.training)  # (bs, q_len, hid_size)
+        A naive implementation as described in BiDAF would concatenate the
+        three vectors then project the result with a single weight matrix. This
+        method is a more memory-efficient implementation of the same operation.
 
-		# Shapes: (batch_size, c_len, q_len)
-		s0 = torch.matmul(c, self.c_weight).expand([-1, -1, q_len])
-		s1 = torch.matmul(q, self.q_weight).transpose(1, 2) \
-			.expand([-1, c_len, -1])
-		s2 = torch.matmul(c * self.cq_weight, q.transpose(1, 2))
-		s = s0 + s1 + s2 + self.bias
+        See Also:
+            Equation 1 in https://arxiv.org/abs/1611.01603
+        """
+        c_len, q_len = c.size(1), q.size(1)
+        c = F.dropout(c, self.drop_prob, self.training)  # (bs, c_len, hid_size)
+        q = F.dropout(q, self.drop_prob, self.training)  # (bs, q_len, hid_size)
 
-		return s
+        # Shapes: (batch_size, c_len, q_len)
+        s0 = torch.matmul(c, self.c_weight).expand([-1, -1, q_len])
+        s1 = torch.matmul(q, self.q_weight).transpose(1, 2)\
+                                           .expand([-1, c_len, -1])
+        s2 = torch.matmul(c * self.cq_weight, q.transpose(1, 2))
+        s = s0 + s1 + s2 + self.bias
+
+        return s
 
 
+class BiDAFOutput(nn.Module):
+    """Output layer used by BiDAF for question answering.
+
+    Computes a linear transformation of the attention and modeling
+    outputs, then takes the softmax of the result to get the start pointer.
+    A bidirectional LSTM is then applied the modeling output to produce `mod_2`.
+    A second linear+softmax of the attention output and `mod_2` is used
+    to get the end pointer.
+
+    Args:
+        hidden_size (int): Hidden size used in the BiDAF model.
+        drop_prob (float): Probability of zero-ing out activations.
+    """
+    def __init__(self, hidden_size, drop_prob):
+        super(BiDAFOutput, self).__init__()
+        self.att_linear_1 = nn.Linear(8 * hidden_size, 1)
+        self.mod_linear_1 = nn.Linear(2 * hidden_size, 1)
+
+        self.rnn = RNNEncoder(input_size=2 * hidden_size,
+                              hidden_size=hidden_size,
+                              num_layers=1,
+                              drop_prob=drop_prob)
+
+        self.att_linear_2 = nn.Linear(8 * hidden_size, 1)
+        self.mod_linear_2 = nn.Linear(2 * hidden_size, 1)
+
+    def forward(self, att, mod, mask):
+        # Shapes: (batch_size, seq_len, 1)
+        logits_1 = self.att_linear_1(att) + self.mod_linear_1(mod)
+        mod_2 = self.rnn(mod, mask.sum(-1))
+        logits_2 = self.att_linear_2(att) + self.mod_linear_2(mod_2)
+
+        # Shapes: (batch_size, seq_len)
+        log_p1 = masked_softmax(logits_1.squeeze(), mask, log_softmax=True)
+        log_p2 = masked_softmax(logits_2.squeeze(), mask, log_softmax=True)
+
+        return log_p1, log_p2

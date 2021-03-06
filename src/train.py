@@ -1,3 +1,9 @@
+"""Train a model on SQuAD.
+
+Author:
+    Chris Chute (chute@stanford.edu)
+"""
+
 import numpy as np
 import random
 import torch
@@ -11,11 +17,12 @@ import util
 from args import get_train_args
 from collections import OrderedDict
 from json import dumps
-from model import QANet
+from models import BiDAF
 from tensorboardX import SummaryWriter
 from tqdm import tqdm
 from ujson import load as json_load
 from util import collate_fn, SQuAD
+
 
 def main(args):
     # Set up logging and devices
@@ -39,8 +46,9 @@ def main(args):
     char_vectors = util.torch_from_json(args.char_emb_file)
     # Get model
     log.info('Building model...')
-    model = QANet(word_vectors=word_vectors,
+    model = BiDAF(word_vectors=word_vectors,
                   char_vectors=char_vectors,
+                  hidden_size=args.hidden_size,
                   drop_prob=args.drop_prob)
     model = nn.DataParallel(model, args.gpu_ids)
     if args.load_path:
@@ -92,11 +100,17 @@ def main(args):
                 # Setup for forward
                 cw_idxs = cw_idxs.to(device)
                 qw_idxs = qw_idxs.to(device)
+                qc_idxs = qc_idxs.to(device)
+                cc_idxs = cc_idxs.to(device)
+                f = open("new_error.txt", "a")
+                f.write("context char " + str(cc_idxs.shape) + "\n")
+                f.write("query char " + str(qc_idxs.shape) + "\n")
+                f.close()
                 batch_size = cw_idxs.size(0)
                 optimizer.zero_grad()
 
                 # Forward
-                log_p1, log_p2 = model(cw_idxs, cc_idxs, qw_idxs, qc_idxs)
+                log_p1, log_p2 = model(cw_idxs, qw_idxs, cc_idxs, qc_idxs)
                 y1, y2 = y1.to(device), y2.to(device)
                 loss = F.nll_loss(log_p1, y1) + F.nll_loss(log_p2, y2)
                 loss_val = loss.item()
@@ -147,6 +161,7 @@ def main(args):
                                    split='dev',
                                    num_visuals=args.num_visuals)
 
+
 def evaluate(model, data_loader, device, eval_file, max_len, use_squad_v2):
     nll_meter = util.AverageMeter()
 
@@ -159,11 +174,13 @@ def evaluate(model, data_loader, device, eval_file, max_len, use_squad_v2):
         for cw_idxs, cc_idxs, qw_idxs, qc_idxs, y1, y2, ids in data_loader:
             # Setup for forward
             cw_idxs = cw_idxs.to(device)
+            cc_idxs = cc_idxs.to(device)
+            qc_idxs = qc_idxs.to(device)
             qw_idxs = qw_idxs.to(device)
             batch_size = cw_idxs.size(0)
 
             # Forward
-            log_p1, log_p2 = model(cw_idxs,  cc_idxs, qw_idxs, qc_idxs)
+            log_p1, log_p2 = model(cw_idxs, qw_idxs, qw_idxs, qc_idxs)
             y1, y2 = y1.to(device), y2.to(device)
             loss = F.nll_loss(log_p1, y1) + F.nll_loss(log_p2, y2)
             nll_meter.update(loss.item(), batch_size)

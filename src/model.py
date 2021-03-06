@@ -33,16 +33,16 @@ class QANet(nn.Module):
         conv_dim (int): For conv layers, this is number of filters, but used throughout as hidden_size
         drop_prob (float): Dropout probability.
     """
-    def __init__(self, word_vectors, char_vectors, conv_dim=128, drop_prob=0.5):
+    def __init__(self, word_vectors, char_vectors, hidden_size, conv_dim=128, drop_prob=0.5):
 
         super(QANet, self).__init__()
         self.c_ember = Embedding(word_vectors=word_vectors,
                                     char_vectors=char_vectors,
-                                    char_emb_dim=char_vectors.size(1),
+                                    char_emb_dim=hidden_size,
                                     drop_prob=drop_prob)
         self.q_ember = Embedding(word_vectors=word_vectors,
                                     char_vectors=char_vectors,
-                                    char_emb_dim=char_vectors.size(1),
+                                    char_emb_dim=hidden_size,
                                     drop_prob=drop_prob)
 
        	in_dim = word_vectors.size(1) + char_vectors.size(1)
@@ -78,7 +78,6 @@ class QANet(nn.Module):
         # Embedding encoder
         c_emb_enc = self.c_emb_encer(c_emb)
         q_emb_enc = self.q_emb_encer(q_emb)
-
         # Context-Query Attention
         cq_att = self.cq_att_layer(c_emb_enc, q_emb_enc, cword_mask, qword_mask)
         
