@@ -38,14 +38,12 @@ class QANet(nn.Module):
         super(QANet, self).__init__()
         self.c_ember = Embedding(word_vectors=word_vectors,
                                     char_vectors=char_vectors,
-                                    char_emb_dim=hidden_size,
-                                    drop_prob=drop_prob)
+                                    hidden_size=hidden_size)
         self.q_ember = Embedding(word_vectors=word_vectors,
                                     char_vectors=char_vectors,
-                                    char_emb_dim=hidden_size,
-                                    drop_prob=drop_prob)
+                                    hidden_size=hidden_size,)
 
-       	in_dim = word_vectors.size(1) + char_vectors.size(1)
+        in_dim = 100
 
         self.c_emb_encer = EmbeddingEncoder(in_dim, num_conv=4, kernel=7, 
                                                    filters=conv_dim, num_heads=8, 
