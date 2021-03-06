@@ -56,12 +56,13 @@ class QANet(nn.Module):
                                                    max_len=5000)
 
         self.cq_att_layer = BiDAFAttention(in_dim)
+        self.att_cnn = nn.Conv1d(in_dim*4, in_dim, kernel_size=7, padding=7//2)
 
-        self.model_encoder = ModelEncoder(in_dim * 4, num_conv=2, kernel=7,
+        self.model_encoder = ModelEncoder(in_dim, num_conv=2, kernel=7,
                                                     num_heads=8,
                                                    dropout_p=0.1, dropout=0.5, 
                                                    max_len=5000)
-        self.output = OutputLayer(in_dim * 8)
+        self.output = OutputLayer(in_dim*2)
 
 
     def forward(self, cword_idxs, cchar_idxs, qword_idxs, qchar_idxs):
@@ -78,7 +79,11 @@ class QANet(nn.Module):
         q_emb_enc = self.q_emb_encer(q_emb)
         # Context-Query Attention
         cq_att = self.cq_att_layer(c_emb_enc, q_emb_enc, cword_mask, qword_mask)
-        
+
+        cq_att = cq_att.permute(0, 2, 1)
+        cq_att = self.att_cnn(cq_att)
+        cq_att = cq_att.permute(0, 2, 1)
+
         # Model Encoder Layer
         model_enc0 = self.model_encoder(cq_att)
         model_enc1 = self.model_encoder(model_enc0)
