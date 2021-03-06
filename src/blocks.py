@@ -39,7 +39,7 @@ class EncoderBlock(nn.Module):
                                                   k_size=kernel) for _ in range(num_conv-1)])
         self.first_layer_norm = nn.LayerNorm(inp_dim)
         self.layer_norms = nn.ModuleList([nn.LayerNorm(filters) for _ in range(num_conv-1)])
-        self.att_layer_nom = nn.LayerNorm(filters)
+        self.att_layer_norm = nn.LayerNorm(filters)
         self.self_attention = CausalSelfAttention(self.filters, num_heads, dropout_p)
         self.feed_layer_norm = nn.LayerNorm(filters)
         self.proj1 = nn.Linear(filters, filters)
@@ -50,14 +50,14 @@ class EncoderBlock(nn.Module):
         # TODO Figure out mask in attention and every other dropout
         x = self.pos_enc(x)
         x = self.first_layer_norm(x)
-        x.permute(0, 2, 1)
+        x = x.permute(0, 2, 1)
         x = self.first_conv_layer(x)
-        x.permute(0, 2, 1)
+        x = x.permute(0, 2, 1)
         for i in range(self.num_conv - 1):
             y = self.layer_norms[i](x)
-            y.permute(0, 2, 1)
-            y = self.conv_layer(y)
-            y.permute(0, 2, 1)
+            y = y.permute(0, 2, 1)
+            y = self.conv_layers[i](y)
+            y = y.permute(0, 2, 1)
             x = x + y
         # Self-Attention
         y = self.att_layer_norm(x)

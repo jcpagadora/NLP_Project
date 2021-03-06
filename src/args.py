@@ -227,7 +227,7 @@ def add_train_test_args(parser):
                         help='Base directory for saving information.')
     parser.add_argument('--batch_size',
                         type=int,
-                        default=8,
+                        default=64,
                         help='Batch size per GPU. Scales automatically when \
                               multiple GPUs are available.')
     parser.add_argument('--use_squad_v2',
@@ -236,7 +236,7 @@ def add_train_test_args(parser):
                         help='Whether to use SQuAD 2.0 (unanswerable) questions.')
     parser.add_argument('--hidden_size',
                         type=int,
-                        default=100,
+                        default=128,
                         help='Number of features in encoder hidden layers.')
     parser.add_argument('--num_visuals',
                         type=int,

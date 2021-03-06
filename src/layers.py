@@ -50,6 +50,7 @@ class Embedding(nn.Module):
         char_emb = F.dropout(char_emb, self.char_drop)
 
         emb = torch.cat([char_emb, word_emb], dim=2)
+        emb = self.proj(emb)
         emb = self.hwy(emb)
 
         return emb

@@ -103,15 +103,11 @@ def main(args):
                 qw_idxs = qw_idxs.to(device)
                 qc_idxs = qc_idxs.to(device)
                 cc_idxs = cc_idxs.to(device)
-                f = open("new_error.txt", "a")
-                f.write("context char " + str(cc_idxs.shape) + "\n")
-                f.write("query char " + str(qc_idxs.shape) + "\n")
-                f.close()
                 batch_size = cw_idxs.size(0)
                 optimizer.zero_grad()
 
                 # Forward
-                log_p1, log_p2 = model(cw_idxs, qw_idxs, cc_idxs, qc_idxs)
+                log_p1, log_p2 = model(cw_idxs, cc_idxs, qw_idxs, qc_idxs)
                 y1, y2 = y1.to(device), y2.to(device)
                 loss = F.nll_loss(log_p1, y1) + F.nll_loss(log_p2, y2)
                 loss_val = loss.item()
@@ -181,7 +177,7 @@ def evaluate(model, data_loader, device, eval_file, max_len, use_squad_v2):
             batch_size = cw_idxs.size(0)
 
             # Forward
-            log_p1, log_p2 = model(cw_idxs, qw_idxs, qw_idxs, qc_idxs)
+            log_p1, log_p2 = model(cw_idxs, cc_idxs, qw_idxs, qc_idxs)
             y1, y2 = y1.to(device), y2.to(device)
             loss = F.nll_loss(log_p1, y1) + F.nll_loss(log_p2, y2)
             nll_meter.update(loss.item(), batch_size)
