@@ -80,14 +80,14 @@ class EncoderBlock(nn.Module):
         x = self.layer_dropout(x, y, self.dropout * float(j) / num_layers)
         return x
 
-    def layer_dropout(self, x, res, dropout):
+    def layer_dropout(self, x, y, dropout):
     if self.training:
         if torch.empty(1).uniform_(0,1) < dropout:
-            return res
+            return y
         else:
-            return F.dropout(x, dropout, training=self.training) + res
+            return F.dropout(x, dropout, training=self.training) + y
     else:
-        return x + res
+        return x + y
 
 
 class ds_conv(nn.Module):
@@ -179,4 +179,3 @@ class CausalSelfAttention(nn.Module):
         # output projection
         y = self.resid_drop(self.proj(y))
         return y
-        
