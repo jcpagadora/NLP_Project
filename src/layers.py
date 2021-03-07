@@ -97,8 +97,8 @@ class EmbeddingEncoder(nn.Module):
         self.block1 = EncoderBlock(inp_dim, num_conv, kernel, num_heads,
                                    dropout_p, dropout, max_len)
 
-    def forward(self, x):
-        return self.block1(x)
+    def forward(self, x, L_drop_j, num_blocks):
+        return self.block1(x, L_drop_j, num_blocks)
 
 
 class ContextQueryAttention(nn.Module):
@@ -161,13 +161,16 @@ class ModelEncoder(nn.Module):
                  dropout_p=0.1, dropout=0.5, max_len=5000, num_blocks=7):
         super(ModelEncoder, self).__init__()
 
-        self.blocks = nn.ModuleList([EncoderBlock(inp_dim, num_conv=2, kernel=7,
-                                    num_heads=8, dropout_p=0.1,
-                                    dropout=0.5, max_len=5000) for _ in range(num_blocks)])
+        self.dropout = dropout
+        self.blocks = nn.ModuleList([EncoderBlock(inp_dim, num_conv=num_conv, kernel=kernel,
+                                    num_heads=num_heads, dropout_p=dropout_p,
+                                    dropout=dropout, max_len=max_len) for _ in range(num_blocks)])
 
-    def forward(self, x):
-        for enc_block in self.blocks:
-            x = enc_block(x)
+    def forward(self, x, num_blocks):
+        x = F.dropout(x, p=self.dropout, training=self.training)
+        for i in range(len(self.blocks)):
+            # This accounts for 2 conv layers, plus self-attention & feedforward layers in each block
+            x = self.blocks[i](x, 4 * i + 1, num_blocks)
         return x
 
 

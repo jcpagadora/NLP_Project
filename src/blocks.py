@@ -43,11 +43,10 @@ class EncoderBlock(nn.Module):
         self.nonLinear = nn.ReLU()
         self.proj2 = nn.Linear(inp_dim, inp_dim)
 
-    def forward(self, x, num_blocks):
+    def forward(self, x, L_drop_j, num_blocks):
         # TODO Figure out mask in attention and every other dropout
         num_layers = (self.num_conv + 1) * num_blocks
         x = self.pos_enc(x)
-        j = 1
         for i in range(self.num_conv):
             if i == 0:
                 conv, layer_norm = self.first_conv_layer, self.first_layer_norm
@@ -57,8 +56,8 @@ class EncoderBlock(nn.Module):
             x = x.permute(0, 2, 1)
             x = layer_norm(x).permute(0, 2, 1)
             x = conv(out)
-            x = layer_dropout(x, y, self.dropout * float(j) / num_layers)
-            j += 1
+            x = layer_dropout(x, y, self.dropout * float(L_drop_j) / num_layers)
+            L_drop_j += 1
 
         # Self-Attention
         y = x
@@ -66,8 +65,8 @@ class EncoderBlock(nn.Module):
         x = self.att_layer_norm(x).permute(0, 2, 1)
         x = F.dropout(x, p=self.dropout, training=self.training)
         x = self.self_attention(x)
-        x = self.layer_dropout(x, y, self.dropout * float(j) / num_layers)
-        j += 1
+        x = self.layer_dropout(x, y, self.dropout * float(L_drop_j) / num_layers)
+        L_drop_j += 1
 
         # Feedforward
         y = x
@@ -77,7 +76,7 @@ class EncoderBlock(nn.Module):
         x = self.proj1(x)
         y = self.nonLinear(y)
         y = self.proj2(y)
-        x = self.layer_dropout(x, y, self.dropout * float(j) / num_layers)
+        x = self.layer_dropout(x, y, self.dropout * float(L_drop_j) / num_layers)
         return x
 
     def layer_dropout(self, x, y, dropout):

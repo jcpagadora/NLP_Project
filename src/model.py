@@ -36,21 +36,13 @@ class QANet(nn.Module):
     def __init__(self, word_vectors, char_vectors, hidden_size, conv_dim=128, drop_prob=0.5):
 
         super(QANet, self).__init__()
-        self.c_ember = Embedding(word_vectors=word_vectors,
+        self.ember = Embedding(word_vectors=word_vectors,
                                     char_vectors=char_vectors,
                                     hidden_size=hidden_size)
-        self.q_ember = Embedding(word_vectors=word_vectors,
-                                    char_vectors=char_vectors,
-                                    hidden_size=hidden_size,)
 
         in_dim = hidden_size
 
-        self.c_emb_encer = EmbeddingEncoder(in_dim, num_conv=4, kernel=7, 
-                                                    num_heads=8,
-                                                   dropout_p=0.1, dropout=0.5, 
-                                                   max_len=5000)
-
-        self.q_emb_encer = EmbeddingEncoder(in_dim, num_conv=4, kernel=7, 
+        self.emb_encer = EmbeddingEncoder(in_dim, num_conv=4, kernel=7, 
                                                     num_heads=8,
                                                    dropout_p=0.1, dropout=0.5, 
                                                    max_len=5000)
@@ -71,12 +63,12 @@ class QANet(nn.Module):
         c_len_words, q_len_words = cword_mask.sum(-1), qword_mask.sum(-1)
 
         # Input embedding
-        c_emb = self.c_ember(cword_idxs, cchar_idxs)
-        q_emb = self.q_ember(qword_idxs, qchar_idxs)
+        c_emb = self.ember(cword_idxs, cchar_idxs)
+        q_emb = self.ember(qword_idxs, qchar_idxs)
 
         # Embedding encoder
-        c_emb_enc = self.c_emb_encer(c_emb)
-        q_emb_enc = self.q_emb_encer(q_emb)
+        c_emb_enc = self.emb_encer(c_emb, 1, 1)
+        q_emb_enc = self.emb_encer(q_emb, 1, 1)
         # Context-Query Attention
         cq_att = self.cq_att_layer(c_emb_enc, q_emb_enc, cword_mask, qword_mask)
 
@@ -85,9 +77,9 @@ class QANet(nn.Module):
         cq_att = cq_att.permute(0, 2, 1)
 
         # Model Encoder Layer
-        model_enc0 = self.model_encoder(cq_att)
-        model_enc1 = self.model_encoder(model_enc0)
-        model_enc2 = self.model_encoder(model_enc1)
+        model_enc0 = self.model_encoder(cq_att, 7)
+        model_enc1 = self.model_encoder(model_enc0, 7)
+        model_enc2 = self.model_encoder(model_enc1, 7)
 
         # Output Layer
         start_probs, end_probs = self.output(model_enc0, model_enc1, model_enc2, cword_idxs)
