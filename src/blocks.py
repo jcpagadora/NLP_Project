@@ -12,7 +12,6 @@ class EncoderBlock(nn.Module):
         Between each is a layer-norm.
         Note: Each of these is placed within a residual block
         Note: filters is the dimensionality of this block, i.e., input and output size
-
         Args:
             inp_dim (int): Dimension of the input (after positional encoding)
             num_conv (int): Number of initial convolutional layers
@@ -22,7 +21,6 @@ class EncoderBlock(nn.Module):
             dropout_p (float): Dropout probability for positional encoding
             dropout (float): Dropout probability for feedforward layer
             max_len (int): Maximum length for positional encoding
-
        Note: output of this layer should equal the number of filters
      """
 
@@ -45,37 +43,57 @@ class EncoderBlock(nn.Module):
         self.nonLinear = nn.ReLU()
         self.proj2 = nn.Linear(inp_dim, inp_dim)
 
-    def forward(self, x):
+    def forward(self, x, num_blocks):
         # TODO Figure out mask in attention and every other dropout
+        num_layers = (self.num_conv + 1) * num_blocks
         x = self.pos_enc(x)
-        x = self.first_layer_norm(x)
-        x = x.permute(0, 2, 1)
-        x = self.first_conv_layer(x)
-        x = x.permute(0, 2, 1)
-        for i in range(self.num_conv - 1):
-            y = self.layer_norms[i](x)
-            y = y.permute(0, 2, 1)
-            y = self.conv_layers[i](y)
-            y = y.permute(0, 2, 1)
-            x = x + y
+        j = 1
+        for i in range(self.num_conv):
+            if i == 0:
+                conv, layer_norm = self.first_conv_layer, self.first_layer_norm
+            else:
+                conv, layer_norm = self.conv_layers[i-1], self.layer_norms[i-1]
+            y = x
+            x = x.permute(0, 2, 1)
+            x = layer_norm(x).permute(0, 2, 1)
+            x = conv(out)
+            x = layer_dropout(x, y, self.dropout * float(j) / num_layers)
+            j += 1
+
         # Self-Attention
-        y = self.att_layer_norm(x)
-        y = self.self_attention(y)
-        x = x + y
+        y = x
+        x = x.permute(0, 2, 1)
+        x = self.att_layer_norm(x).permute(0, 2, 1)
+        x = F.dropout(x, p=self.dropout, training=self.training)
+        x = self.self_attention(x)
+        x = self.layer_dropout(x, y, self.dropout * float(j) / num_layers)
+        j += 1
+
         # Feedforward
-        y = self.feed_layer_norm(x)
-        y = self.proj1(y)
+        y = x
+        x = x.permute(0, 2, 1)
+        x = self.feed_layer_norm(x).permute(0, 2, 1)
+        x = F.dropout(x, p=self.dropout, training=self.training)
+        x = self.proj1(x)
         y = self.nonLinear(y)
         y = self.proj2(y)
-        x = x + y
+        x = self.layer_dropout(x, y, self.dropout * float(j) / num_layers)
         return x
+
+    def layer_dropout(self, x, res, dropout):
+    if self.training:
+        if torch.empty(1).uniform_(0,1) < dropout:
+            return res
+        else:
+            return F.dropout(x, dropout, training=self.training) + res
+    else:
+        return x + res
 
 
 class ds_conv(nn.Module):
     """ Depthwise Separable Convolution for input into encoder block within
             embedding encoder layer
             In the original paper, kernel size is set to 7.
-
             Args:
                 input_channel: number of input channel
                 output_channel: number of output channel
@@ -98,9 +116,7 @@ class ds_conv(nn.Module):
 class PositionalEncoding(nn.Module):
     """Positional Encoding module for input into encoder block within
        embedding encoder layer.
-
        Reference:  https://pytorch.org/tutorials/beginner/transformer_tutorial.html
-
        Args:
            emb_dim (int): Embedding dimension for positional encoding.
                           Equals dimension of input.
@@ -163,3 +179,4 @@ class CausalSelfAttention(nn.Module):
         # output projection
         y = self.resid_drop(self.proj(y))
         return y
+        
