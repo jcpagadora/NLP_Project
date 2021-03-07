@@ -97,8 +97,8 @@ class EmbeddingEncoder(nn.Module):
         self.block1 = EncoderBlock(inp_dim, num_conv, kernel, num_heads,
                                    dropout_p, dropout, max_len)
 
-    def forward(self, x):
-        return self.block1(x)
+    def forward(self, x, key_padding_mask):
+        return self.block1(x, key_padding_mask)
 
 
 class ContextQueryAttention(nn.Module):
@@ -165,9 +165,9 @@ class ModelEncoder(nn.Module):
                                     num_heads=8, dropout_p=0.1,
                                     dropout=0.5, max_len=5000) for _ in range(num_blocks)])
 
-    def forward(self, x):
+    def forward(self, x, key_padding_mask):
         for enc_block in self.blocks:
-            x = enc_block(x)
+            x = enc_block(x, key_padding_mask)
         return x
 
 
