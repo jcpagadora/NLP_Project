@@ -53,16 +53,16 @@ class EncoderBlock(nn.Module):
             else:
                 conv, layer_norm = self.conv_layers[i-1], self.layer_norms[i-1]
             y = x
-            x = x.permute(0, 2, 1)
             x = layer_norm(x).permute(0, 2, 1)
-            x = conv(out)
-            x = layer_dropout(x, y, self.dropout * float(L_drop_j) / num_layers)
+            x = conv(x)
+            x = x.permute(0, 2, 1)
+            x = self.layer_dropout(x, y, self.dropout * float(L_drop_j) / num_layers)
             L_drop_j += 1
 
         # Self-Attention
         y = x
-        x = x.permute(0, 2, 1)
-        x = self.att_layer_norm(x).permute(0, 2, 1)
+        #x = x.permute(0, 2, 1)
+        x = self.att_layer_norm(x)#.permute(0, 2, 1)
         x = F.dropout(x, p=self.dropout, training=self.training)
         x = self.self_attention(x)
         x = self.layer_dropout(x, y, self.dropout * float(L_drop_j) / num_layers)
@@ -70,8 +70,8 @@ class EncoderBlock(nn.Module):
 
         # Feedforward
         y = x
-        x = x.permute(0, 2, 1)
-        x = self.feed_layer_norm(x).permute(0, 2, 1)
+        #x = x.permute(0, 2, 1)
+        x = self.feed_layer_norm(x)#.permute(0, 2, 1)
         x = F.dropout(x, p=self.dropout, training=self.training)
         x = self.proj1(x)
         y = self.nonLinear(y)
@@ -80,13 +80,13 @@ class EncoderBlock(nn.Module):
         return x
 
     def layer_dropout(self, x, y, dropout):
-    if self.training:
-        if torch.empty(1).uniform_(0,1) < dropout:
-            return y
+        if self.training:
+            if torch.empty(1).uniform_(0,1) < dropout:
+                return y
+            else:
+                return F.dropout(x, dropout, training=self.training) + y
         else:
-            return F.dropout(x, dropout, training=self.training) + y
-    else:
-        return x + y
+            return x + y
 
 
 class ds_conv(nn.Module):
@@ -178,3 +178,4 @@ class CausalSelfAttention(nn.Module):
         # output projection
         y = self.resid_drop(self.proj(y))
         return y
+        
