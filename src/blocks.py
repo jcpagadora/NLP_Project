@@ -39,7 +39,7 @@ class EncoderBlock(nn.Module):
         self.first_layer_norm = nn.LayerNorm(inp_dim)
         self.layer_norms = nn.ModuleList([nn.LayerNorm(inp_dim) for _ in range(num_conv-1)])
         self.att_layer_norm = nn.LayerNorm(inp_dim)
-        self.self_attention = nn.MultiheadAttention(inp_dim, num_heads, dropout=dropout_p)
+        self.self_attention = MHA(inp_dim, num_heads, attn_pdrop=dropout, resid_pdrop=dropout)
         self.feed_layer_norm = nn.LayerNorm(inp_dim)
         self.proj1 = nn.Linear(inp_dim, inp_dim)
         self.nonLinear = nn.ReLU()
@@ -60,9 +60,7 @@ class EncoderBlock(nn.Module):
             x = x + y
         # Self-Attention
         y = self.att_layer_norm(x)
-        y = y.permute(1, 0, 2)
-        y, _ = self.self_attention(y, y, y, key_padding_mask = (padding_mask==0), attn_mask = None)
-        y = y.permute(1, 0, 2)
+        y = self.self_attention(y, padding_mask)
         x = x + y
         # Feedforward
         y = self.feed_layer_norm(x)
