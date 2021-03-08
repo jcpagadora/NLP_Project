@@ -1,9 +1,3 @@
-"""Train a model on SQuAD.
-
-Author:
-    Chris Chute (chute@stanford.edu)
-"""
-
 import numpy as np
 import random
 import torch
@@ -17,7 +11,7 @@ import util
 from args import get_train_args
 from collections import OrderedDict
 from json import dumps
-from models import BiDAF
+#from models import BiDAF
 from model import QANet
 from tensorboardX import SummaryWriter
 from tqdm import tqdm
@@ -69,7 +63,7 @@ def main(args):
                                  log=log)
 
     # Get optimizer and scheduler
-    optimizer = optim.Adadelta(model.parameters(), args.lr,
+    optimizer = optim.Adam(model.parameters(), args.lr,
                                weight_decay=args.l2_wd)
     scheduler = sched.LambdaLR(optimizer, lambda s: 1.)  # Constant LR
 

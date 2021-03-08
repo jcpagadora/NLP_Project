@@ -56,7 +56,6 @@ class Embedding(nn.Module):
         return emb
 
 
-# TODO: Fill out classes for all other layers
 
 class HighwayEncoder(nn.Module):
     """Encode an input sequence using a highway network.
@@ -97,8 +96,8 @@ class EmbeddingEncoder(nn.Module):
         self.block1 = EncoderBlock(inp_dim, num_conv, kernel, num_heads,
                                    dropout_p, dropout, max_len)
 
-    def forward(self, x, L_drop_j, num_blocks):
-        return self.block1(x, L_drop_j, num_blocks)
+    def forward(self, x, L_drop_j, num_blocks, key_padding_mask):
+        return self.block1(x, L_drop_j, num_blocks, key_padding_mask)
 
 
 class ContextQueryAttention(nn.Module):
@@ -166,11 +165,10 @@ class ModelEncoder(nn.Module):
                                     num_heads=num_heads, dropout_p=dropout_p,
                                     dropout=dropout, max_len=max_len) for _ in range(num_blocks)])
 
-    def forward(self, x, num_blocks):
+    def forward(self, x, num_blocks, key_padding_mask):
         x = F.dropout(x, p=self.dropout, training=self.training)
         for i in range(len(self.blocks)):
-            # This accounts for 2 conv layers, plus self-attention & feedforward layers in each block
-            x = self.blocks[i](x, 4 * i + 1, num_blocks)
+            x = self.blocks[i](x, 4 * i + 1, num_blocks, key_padding_mask)
         return x
 
 
@@ -195,7 +193,7 @@ class OutputLayer(nn.Module):
         start_prob = masked_softmax(lin_out1.squeeze(), mask, log_softmax=True)
         end_prob = masked_softmax(lin_out2.squeeze(), mask, log_softmax=True)
         return start_prob, end_prob
-
+        
 
 class BiDAFAttention(nn.Module):
     """Bidirectional attention originally used by BiDAF.

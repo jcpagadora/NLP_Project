@@ -2,6 +2,7 @@ import layers
 import torch
 import torch.nn as nn
 from layers import *
+from util import get_attn_pad_mask
 
 
 class QANet(nn.Module):
@@ -41,7 +42,6 @@ class QANet(nn.Module):
         self.ember = Embedding(word_vectors=word_vectors,
                                     char_vectors=char_vectors,
                                     hidden_size=hidden_size)
-
         in_dim = hidden_size
 
         self.emb_encer = EmbeddingEncoder(in_dim, num_conv=4, kernel=7, 
@@ -63,14 +63,16 @@ class QANet(nn.Module):
         cword_mask = torch.zeros_like(cword_idxs) != cword_idxs
         qword_mask = torch.zeros_like(qword_idxs) != qword_idxs
         c_len_words, q_len_words = cword_mask.sum(-1), qword_mask.sum(-1)
+        ckey_padding_mask = get_attn_pad_mask(cword_idxs, cword_mask)
+        qkey_padding_mask = get_attn_pad_mask(qword_mask, cword_mask)
 
         # Input embedding
         c_emb = self.ember(cword_idxs, cchar_idxs)
         q_emb = self.ember(qword_idxs, qchar_idxs)
 
         # Embedding encoder
-        c_emb_enc = self.emb_encer(c_emb, 1, 1)
-        q_emb_enc = self.emb_encer(q_emb, 1, 1)
+        c_emb_enc = self.emb_encer(c_emb, 1, 1, cword_mask)
+        q_emb_enc = self.emb_encer(q_emb, 1, 1, qword_mask)
         # Context-Query Attention
         cq_att = self.cq_att_layer(c_emb_enc, q_emb_enc, cword_mask, qword_mask)
 
@@ -79,9 +81,9 @@ class QANet(nn.Module):
         cq_att = cq_att.permute(0, 2, 1)
 
         # Model Encoder Layer
-        model_enc0 = self.model_encoder(cq_att, 7)
-        model_enc1 = self.model_encoder(model_enc0, 7)
-        model_enc2 = self.model_encoder(model_enc1, 7)
+        model_enc0 = self.model_encoder(cq_att, 7, cword_mask)
+        model_enc1 = self.model_encoder(model_enc0, 7, cword_mask)
+        model_enc2 = self.model_encoder(model_enc1, 7, cword_mask)
 
         # Output Layer
         start_probs, end_probs = self.output(model_enc0, model_enc1, model_enc2, cword_idxs)

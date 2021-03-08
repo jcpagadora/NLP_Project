@@ -37,14 +37,13 @@ class EncoderBlock(nn.Module):
         self.first_layer_norm = nn.LayerNorm(inp_dim)
         self.layer_norms = nn.ModuleList([nn.LayerNorm(inp_dim) for _ in range(num_conv-1)])
         self.att_layer_norm = nn.LayerNorm(inp_dim)
-        self.self_attention = CausalSelfAttention(inp_dim, num_heads, dropout_p)
+        self.self_attention = MHA(inp_dim, num_heads, attn_pdrop=dropout_p, resid_pdrop=dropout_p)
         self.feed_layer_norm = nn.LayerNorm(inp_dim)
         self.proj1 = nn.Linear(inp_dim, inp_dim)
         self.nonLinear = nn.ReLU()
         self.proj2 = nn.Linear(inp_dim, inp_dim)
 
-    def forward(self, x, L_drop_j, num_blocks):
-        # TODO Figure out mask in attention and every other dropout
+    def forward(self, x, L_drop_j, num_blocks, padding_mask):
         num_layers = (self.num_conv + 1) * num_blocks
         x = self.pos_enc(x)
         for i in range(self.num_conv):
@@ -64,7 +63,7 @@ class EncoderBlock(nn.Module):
         #x = x.permute(0, 2, 1)
         x = self.att_layer_norm(x)#.permute(0, 2, 1)
         x = F.dropout(x, p=self.dropout, training=self.training)
-        x = self.self_attention(x)
+        x = self.self_attention(x, padding_mask)
         x = self.layer_dropout(x, y, self.dropout * float(L_drop_j) / num_layers)
         L_drop_j += 1
 
@@ -81,7 +80,7 @@ class EncoderBlock(nn.Module):
 
     def layer_dropout(self, x, y, dropout):
         if self.training:
-            if torch.empty(1).uniform_(0,1) < dropout:
+            if np.random.uniform(0,1) < dropout:
                 return y
             else:
                 return F.dropout(x, dropout, training=self.training) + y
@@ -139,12 +138,12 @@ class PositionalEncoding(nn.Module):
         return x
 
 
-class CausalSelfAttention(nn.Module):
+class MHA(nn.Module):
     """
-    The implementation comes from hw5. We don't take credit for the implementation of this class.
+    Multiheaded attention with mask adapted from hw 5 Causal MHA.
     """
 
-    def __init__(self, n_embd, n_head, pdrop):
+    def __init__(self, n_embd, n_head, attn_pdrop=0.1, resid_pdrop=0.1):
         super().__init__()
         assert n_embd % n_head == 0
         # key, query, value projections for all heads
@@ -152,30 +151,35 @@ class CausalSelfAttention(nn.Module):
         self.query = nn.Linear(n_embd, n_embd)
         self.value = nn.Linear(n_embd, n_embd)
         # regularization
-        self.attn_drop = nn.Dropout(pdrop)
-        self.resid_drop = nn.Dropout(pdrop)
+        self.attn_drop = nn.Dropout(attn_pdrop)
+        self.resid_drop = nn.Dropout(resid_pdrop)
         # output projection
         self.proj = nn.Linear(n_embd, n_embd)
-        # causal mask to ensure that attention is only applied to the left in the input sequence
+        self.layer_norm = nn.LayerNorm(n_embd)
         self.n_head = n_head
 
-    def forward(self, x, layer_past=None):
+    def forward(self, x, mask):
         B, T, C = x.size()
 
         # calculate query, key, values for all heads in batch and move head forward to be the batch dim
-        k = self.key(x).view(B, T, self.n_head, C // self.n_head).transpose(1, 2)  # (B, nh, T, hs)
-        q = self.query(x).view(B, T, self.n_head, C // self.n_head).transpose(1, 2)  # (B, nh, T, hs)
-        v = self.value(x).view(B, T, self.n_head, C // self.n_head).transpose(1, 2)  # (B, nh, T, hs)
+        k = self.key(x).view(B, T, self.n_head, C // self.n_head).transpose(1, 2) # (B, nh, T, hs)
+        q = self.query(x).view(B, T, self.n_head, C // self.n_head).transpose(1, 2) # (B, nh, T, hs)
+        v = self.value(x).view(B, T, self.n_head, C // self.n_head).transpose(1, 2) # (B, nh, T, hs)
 
         # causal self-attention; Self-attend: (B, nh, T, hs) x (B, nh, hs, T) -> (B, nh, T, T)
         att = (q @ k.transpose(-2, -1)) * (1.0 / math.sqrt(k.size(-1)))
-
+        mask = mask.unsqueeze(2)
+        mask = mask.repeat(1, 1, mask.shape[1])
+        mask = mask.unsqueeze(1)
+        mask = mask.repeat(1, self.n_head, 1, 1)
+        att = att.masked_fill(mask == 0, -1e10)
         att = F.softmax(att, dim=-1)
         att = self.attn_drop(att)
-        y = att @ v  # (B, nh, T, T) x (B, nh, T, hs) -> (B, nh, T, hs)
-        y = y.transpose(1, 2).contiguous().view(B, T, C)  # re-assemble all head outputs side by side
-
+        y = att @ v # (B, nh, T, T) x (B, nh, T, hs) -> (B, nh, T, hs)
+        y = y.transpose(1, 2).contiguous().view(B, T, C) # re-assemble all head outputs side by side
         # output projection
         y = self.resid_drop(self.proj(y))
+        y = self.layer_norm(y + x)
+
         return y
-        
+

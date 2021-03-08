@@ -723,3 +723,12 @@ def compute_f1(a_gold, a_pred):
     recall = 1.0 * num_same / len(gold_toks)
     f1 = (2 * precision * recall) / (precision + recall)
     return f1
+
+def get_attn_pad_mask(seq_q, seq_k):
+    """For masking out the padding part of key sequence.
+        Expand to fit the shape of key query attention matrix.
+    """
+    len_q = seq_q.size(1)
+    padding_mask = seq_k.eq(0)
+     # b x lq x lk
+    return padding_mask
