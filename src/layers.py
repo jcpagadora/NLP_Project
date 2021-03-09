@@ -45,6 +45,7 @@ class Embedding(nn.Module):
 
         # conv and max pool
         char_emb = self.conv(char_emb)
+        char_emb = F.relu(char_emb)
         char_emb, _ = torch.max(char_emb, dim=-1)
         char_emb = char_emb.reshape(char_dim[0], char_dim[1], char_dim[3])
         char_emb = F.dropout(char_emb, self.char_drop)
@@ -97,8 +98,8 @@ class EmbeddingEncoder(nn.Module):
         self.block1 = EncoderBlock(inp_dim, num_conv, kernel, num_heads,
                                    dropout_p, dropout, max_len)
 
-    def forward(self, x, key_padding_mask):
-        return self.block1(x, key_padding_mask)
+    def forward(self, x, padding_mask):
+        return self.block1(x, padding_mask)
 
 
 class ContextQueryAttention(nn.Module):

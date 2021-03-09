@@ -33,9 +33,10 @@ class EncoderBlock(nn.Module):
         self.num_conv = num_conv
         self.dropout = dropout
         # depthwise separable cnn layer for fewer parameters
-        self.first_conv_layer = ds_conv(input_channel=inp_dim, output_channel=inp_dim, k_size=kernel)
-        self.conv_layers = nn.ModuleList([ds_conv(input_channel=inp_dim, output_channel=inp_dim,
-                                                  k_size=kernel) for _ in range(num_conv-1)])
+        self.first_conv_layer = nn.Sequential(ds_conv(input_channel=inp_dim, output_channel=inp_dim, k_size=kernel),
+                                              nn.ReLU())
+        self.conv_layers = nn.ModuleList([nn.Sequential(ds_conv(input_channel=inp_dim, output_channel=inp_dim, k_size=kernel),
+                                              nn.ReLU()) for _ in range(num_conv-1)])
         self.first_layer_norm = nn.LayerNorm(inp_dim)
         self.layer_norms = nn.ModuleList([nn.LayerNorm(inp_dim) for _ in range(num_conv-1)])
         self.att_layer_norm = nn.LayerNorm(inp_dim)
