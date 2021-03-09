@@ -69,8 +69,8 @@ def main(args):
                                  log=log)
 
     # Get optimizer and scheduler
-    optimizer = optim.Adadelta(model.parameters(), args.lr,
-                               weight_decay=args.l2_wd)
+    optimizer = optim.Adam(model.parameters(), 0.001, betas=(0.8, 0.999), eps=1e-07,
+                           weight_decay=3e-07)
     scheduler = sched.LambdaLR(optimizer, lambda s: 1.)  # Constant LR
 
     # Get data loader
