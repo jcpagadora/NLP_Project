@@ -46,7 +46,7 @@ class QANet(nn.Module):
         in_dim = hidden_size
 
         self.c_emb_encer = EmbeddingEncoder(in_dim, num_conv=4, kernel=7, 
-                                                    num_heads=8,
+                                                    num_heads=1,
                                                    dropout_p=0.1, dropout=0.5, 
                                                    max_len=5000)
 
@@ -59,7 +59,7 @@ class QANet(nn.Module):
         self.att_cnn = nn.Conv1d(in_dim*4, in_dim, kernel_size=7, padding=7//2)
 
         self.model_encoder = ModelEncoder(in_dim, num_conv=2, kernel=7,
-                                                    num_heads=8,
+                                                    num_heads=1,
                                                    dropout_p=0.1, dropout=0.5, 
                                                    max_len=5000)
         self.output = OutputLayer(in_dim*2)

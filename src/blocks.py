@@ -26,7 +26,7 @@ class EncoderBlock(nn.Module):
        Note: output of this layer should equal the number of filters
      """
 
-    def __init__(self, inp_dim, num_conv=2, kernel=7, num_heads=8,
+    def __init__(self, inp_dim, num_conv=2, kernel=7, num_heads=1,
                  dropout_p=0.1, dropout=0.5, max_len=5000):
         super(EncoderBlock, self).__init__()
         self.pos_enc = PositionalEncoding(inp_dim, dropout_p, max_len)

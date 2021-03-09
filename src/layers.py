@@ -91,7 +91,7 @@ class EmbeddingEncoder(nn.Module):
         self-attention, then a feed forward layer
     """
 
-    def __init__(self, inp_dim, num_conv=4, kernel=7, num_heads=8,
+    def __init__(self, inp_dim, num_conv=4, kernel=7, num_heads=1,
                  dropout_p=0.1, dropout=0.5, max_len=5000):
         super(EmbeddingEncoder, self).__init__()
         self.block1 = EncoderBlock(inp_dim, num_conv, kernel, num_heads,
@@ -162,7 +162,7 @@ class ModelEncoder(nn.Module):
         super(ModelEncoder, self).__init__()
 
         self.blocks = nn.ModuleList([EncoderBlock(inp_dim, num_conv=2, kernel=7,
-                                    num_heads=8, dropout_p=0.1,
+                                    num_heads=1, dropout_p=0.1,
                                     dropout=0.5, max_len=5000) for _ in range(num_blocks)])
 
     def forward(self, x, key_padding_mask):
