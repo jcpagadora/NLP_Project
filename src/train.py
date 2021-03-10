@@ -12,12 +12,13 @@ import torch.nn.functional as F
 import torch.optim as optim
 import torch.optim.lr_scheduler as sched
 import torch.utils.data as data
+from torch.utils.data import SubsetRandomSampler
+
 import util
 
 from args import get_train_args
 from collections import OrderedDict
 from json import dumps
-from models import BiDAF
 from model import QANet
 from tensorboardX import SummaryWriter
 from tqdm import tqdm
@@ -76,9 +77,11 @@ def main(args):
     # Get data loader
     log.info('Building dataset...')
     train_dataset = SQuAD(args.train_record_file, args.use_squad_v2)
+    sample = range(100)
     train_loader = data.DataLoader(train_dataset,
                                    batch_size=args.batch_size,
-                                   shuffle=True,
+                                   shuffle=False,
+                                   sampler=SubsetRandomSampler(sample),
                                    num_workers=args.num_workers,
                                    collate_fn=collate_fn)
     dev_dataset = SQuAD(args.dev_record_file, args.use_squad_v2)
@@ -97,7 +100,10 @@ def main(args):
         log.info(f'Starting epoch {epoch}...')
         with torch.enable_grad(), \
                 tqdm(total=len(train_loader.dataset)) as progress_bar:
-            for cw_idxs, cc_idxs, qw_idxs, qc_idxs, y1, y2, ids in train_loader:
+            # for cw_idxs, cc_idxs, qw_idxs, qc_idxs, y1, y2, ids in train_loader:
+            cw_idxs, cc_idxs, qw_idxs, qc_idxs, y1, y2, ids = next(iter(train_loader))
+            for i in range(len(train_loader)):
+
                 # Setup for forward
                 cw_idxs = cw_idxs.to(device)
                 qw_idxs = qw_idxs.to(device)
@@ -107,7 +113,7 @@ def main(args):
                 optimizer.zero_grad()
 
                 # Forward
-                log_p1, log_p2 = model(cw_idxs, cc_idxs, qw_idxs, qc_idxs)
+                log_p1, log_p2 = model(cw_idxs, cc_idxs, qw_idxs, qc_idxs, test=True)
                 y1, y2 = y1.to(device), y2.to(device)
                 loss = F.nll_loss(log_p1, y1) + F.nll_loss(log_p2, y2)
                 loss_val = loss.item()
@@ -177,7 +183,7 @@ def evaluate(model, data_loader, device, eval_file, max_len, use_squad_v2):
             batch_size = cw_idxs.size(0)
 
             # Forward
-            log_p1, log_p2 = model(cw_idxs, cc_idxs, qw_idxs, qc_idxs)
+            log_p1, log_p2 = model(cw_idxs, cc_idxs, qw_idxs, qc_idxs, test=True)
             y1, y2 = y1.to(device), y2.to(device)
             loss = F.nll_loss(log_p1, y1) + F.nll_loss(log_p2, y2)
             nll_meter.update(loss.item(), batch_size)

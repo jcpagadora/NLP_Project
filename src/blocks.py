@@ -3,7 +3,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
 from layers import *
-import math
 
 
 class EncoderBlock(nn.Module):
@@ -26,19 +25,15 @@ class EncoderBlock(nn.Module):
        Note: output of this layer should equal the number of filters
      """
 
-    def __init__(self, inp_dim, num_conv=2, kernel=7, num_heads=1,
-                 dropout_p=0.1, dropout=0.5, max_len=5000):
+    def __init__(self, inp_dim, num_conv=2, kernel=7, num_heads=1, dropout=0.1):
         super(EncoderBlock, self).__init__()
-        self.pos_enc = PositionalEncoding(inp_dim, dropout_p, max_len)
+        self.pos_enc = PositionalEncoding(inp_dim)
         self.num_conv = num_conv
         self.dropout = dropout
         # depthwise separable cnn layer for fewer parameters
-        self.first_conv_layer = nn.Sequential(ds_conv(input_channel=inp_dim, output_channel=inp_dim, k_size=kernel),
-                                              nn.ReLU())
         self.conv_layers = nn.ModuleList([nn.Sequential(ds_conv(input_channel=inp_dim, output_channel=inp_dim, k_size=kernel),
-                                              nn.ReLU()) for _ in range(num_conv-1)])
-        self.first_layer_norm = nn.LayerNorm(inp_dim)
-        self.layer_norms = nn.ModuleList([nn.LayerNorm(inp_dim) for _ in range(num_conv-1)])
+                                              nn.ReLU()) for _ in range(num_conv)])
+        self.layer_norms = nn.ModuleList([nn.LayerNorm(inp_dim) for _ in range(num_conv)])
         self.att_layer_norm = nn.LayerNorm(inp_dim)
         self.self_attention = MHA(inp_dim, num_heads, attn_pdrop=dropout, resid_pdrop=dropout)
         self.feed_layer_norm = nn.LayerNorm(inp_dim)
@@ -46,29 +41,24 @@ class EncoderBlock(nn.Module):
         self.nonLinear = nn.ReLU()
         self.proj2 = nn.Linear(inp_dim, inp_dim)
 
-    def forward(self, x, padding_mask):
-        # TODO Figure out mask in attention and every other dropout
+    def forward(self, x, padding_mask, current_layer, total_layer, test=False):
         x = self.pos_enc(x)
-        x = self.first_layer_norm(x)
-        x = x.permute(0, 2, 1)
-        x = self.first_conv_layer(x)
-        x = x.permute(0, 2, 1)
-        for i in range(self.num_conv - 1):
+        for i in range(self.num_conv):
             y = self.layer_norms[i](x)
             y = y.permute(0, 2, 1)
             y = self.conv_layers[i](y)
             y = y.permute(0, 2, 1)
-            x = x + y
+            x = stochastic_dropout(x, y, current_layer+i, total_layer, test=test)
         # Self-Attention
         y = self.att_layer_norm(x)
         y = self.self_attention(y, padding_mask)
-        x = x + y
+        x = stochastic_dropout(x, y, current_layer+self.num_conv, total_layer, test=test)
         # Feedforward
         y = self.feed_layer_norm(x)
         y = self.proj1(y)
         y = self.nonLinear(y)
         y = self.proj2(y)
-        x = x + y
+        x = stochastic_dropout(x, y, current_layer+self.num_conv+1, total_layer, test=test)
         return x
 
 
@@ -107,22 +97,32 @@ class PositionalEncoding(nn.Module):
                           Equals dimension of input.
     """
 
-    def __init__(self, emb_dim, dropout=0.1, max_len=5000):
+    def __init__(self, hidden_size, seq_len = 450, dropout=0.1):
         super(PositionalEncoding, self).__init__()
         self.dropout = nn.Dropout(p=dropout)
-
-        pe = torch.zeros(max_len, emb_dim)
-        position = torch.arange(0, max_len, dtype=torch.float).unsqueeze(1)
-        div_term = torch.exp(torch.arange(0, emb_dim, 2).float() * (-np.log(10000.0) / emb_dim))
-        pe[:, 0::2] = torch.sin(position * div_term)
-        pe[:, 1::2] = torch.cos(position * div_term)
-        pe = pe.unsqueeze(0).permute(1, 0, 2)
-        self.register_buffer('pe', pe)
+        table = create_sinusoidal_table(seq_len, hidden_size).unsqueeze(0)
+        self.register_buffer("pos_table", table)
 
     def forward(self, x):
-        x = x + self.pe[:x.size(0), :]
+        x = x + self.pos_table[:, x.size(1), :]
         x = self.dropout(x)
         return x
+
+def create_sinusoidal_table(seq_len, hidden_size):
+    table = torch.zeros(seq_len, hidden_size)
+    pos = torch.tensor(list(range(seq_len))).unsqueeze(1)
+    half_dim = torch.tensor(list(range(hidden_size // 2)))
+    half_dim = torch.exp(-2 / hidden_size * np.log(10000) * half_dim.reshape(1, hidden_size // 2))
+    table[:, 0::2] = torch.sin(pos / half_dim)
+    table[:, 1::2] = torch.cos(pos / half_dim)
+    return table
+
+
+
+
+
+
+
 
 class MHA(nn.Module):
     """
@@ -168,3 +168,15 @@ class MHA(nn.Module):
         y = self.layer_norm(y + x)
 
         return y
+
+def stochastic_dropout(identity, output, cur_depth, total_depth, test=False, p_last=0.9):
+    if test:
+        return identity
+
+    prop = 1 - (cur_depth/total_depth) * (1 - p_last)
+    b = np.random.binomial(1, prop)
+    if b == 0:
+        return identity
+    return output + identity
+
+

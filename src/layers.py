@@ -87,69 +87,18 @@ class HighwayEncoder(nn.Module):
 
 
 class EmbeddingEncoder(nn.Module):
-    """Embedding Encoder layer consists of a stack of encoder blocks,
-        each encoder block consists of several convolutional layers, then
+    """Embedding Encoder layer consists of one encoder block which
+        consists of several convolutional layers, then
         self-attention, then a feed forward layer
     """
 
-    def __init__(self, inp_dim, num_conv=4, kernel=7, num_heads=1,
-                 dropout_p=0.1, dropout=0.5, max_len=5000):
+    def __init__(self, inp_dim, num_conv=4, kernel=7, num_heads=1, dropout=0.1):
         super(EmbeddingEncoder, self).__init__()
-        self.block1 = EncoderBlock(inp_dim, num_conv, kernel, num_heads,
-                                   dropout_p, dropout, max_len)
+        self.block1 = EncoderBlock(inp_dim, num_conv= num_conv, kernel=kernel, num_heads=num_heads, dropout=dropout)
+        self.num_conv = num_conv
 
-    def forward(self, x, padding_mask):
-        return self.block1(x, padding_mask)
-
-
-class ContextQueryAttention(nn.Module):
-    """This layer "combines" the context and query encoded embeddings from the
-        previous layers through attention. It is a standard context-query
-        attention layer that is used in other architectures, such as BiDAF.
-        For now, this was basically taken from the given starter code (BiDAF)
-    """
-
-    def __init__(self, hidden_size, drop_prob=0.1):
-        super(ContextQueryAttention, self).__init__()
-        self.drop_prob = drop_prob
-        self.c_weight = nn.Parameter(torch.zeros(hidden_size, 1))
-        self.q_weight = nn.Parameter(torch.zeros(hidden_size, 1))
-        self.cq_weight = nn.Parameter(torch.zeros(1, 1, hidden_size))
-        for weight in (self.c_weight, self.q_weight, self.cq_weight):
-            nn.init.xavier_uniform_(weight)
-        self.bias = nn.Parameter(torch.zeros(1))
-
-    def forward(self, context, query, c_mask, q_mask):
-        batch_size, c_len, _ = context.size()
-        q_len = query.size(1)
-        s = self.get_similarity_matrix(context, query)  # (batch_size, c_len, q_len)
-        c_mask = c_mask.view(batch_size, c_len, 1)  # (batch_size, c_len, 1)
-        q_mask = q_mask.view(batch_size, 1, q_len)  # (batch_size, 1, q_len)
-        s1 = masked_softmax(s, q_mask, dim=2)  # (batch_size, c_len, q_len)
-        s2 = masked_softmax(s, c_mask, dim=1)  # (batch_size, c_len, q_len)
-
-        # (bs, c_len, q_len) x (bs, q_len, hid_size) => (bs, c_len, hid_size)
-        a = torch.bmm(s1, query)
-        # (bs, c_len, c_len) x (bs, c_len, hid_size) => (bs, c_len, hid_size)
-        b = torch.bmm(torch.bmm(s1, s2.transpose(1, 2)), context)
-
-        x = torch.cat([context, a, context * a, context * b], dim=2)  # (bs, c_len, 4 * hid_size)
-
-        return x
-
-    def get_similarity_matrix(self, context, query):
-        c_len, q_len = context.size(1), query.size(1)
-        c = F.dropout(context, self.drop_prob, self.training)  # (bs, c_len, hid_size)
-        q = F.dropout(query, self.drop_prob, self.training)  # (bs, q_len, hid_size)
-
-        # Shapes: (batch_size, c_len, q_len)
-        s0 = torch.matmul(c, self.c_weight).expand([-1, -1, q_len])
-        s1 = torch.matmul(q, self.q_weight).transpose(1, 2) \
-            .expand([-1, c_len, -1])
-        s2 = torch.matmul(c * self.cq_weight, q.transpose(1, 2))
-        s = s0 + s1 + s2 + self.bias
-
-        return s
+    def forward(self, x, padding_mask, test=False):
+        return self.block1(x, padding_mask, 1, self.num_conv+2, test=test)
 
 
 class ModelEncoder(nn.Module):
@@ -158,17 +107,16 @@ class ModelEncoder(nn.Module):
         layer, which is of dimension 4 x 128 = 512).
     """
 
-    def __init__(self, inp_dim, num_conv=2, kernel=7, num_heads=8,
-                 dropout_p=0.1, dropout=0.5, max_len=5000, num_blocks=7):
+    def __init__(self, inp_dim, num_conv=2, kernel=7, num_heads=1, dropout=0.1, num_blocks=7):
         super(ModelEncoder, self).__init__()
+        self.num_conv = num_conv
+        self.num_blocks = num_blocks
+        self.blocks = nn.ModuleList([EncoderBlock(inp_dim, num_conv= num_conv, kernel=kernel,
+                                    num_heads=num_heads, dropout=dropout) for _ in range(num_blocks)])
 
-        self.blocks = nn.ModuleList([EncoderBlock(inp_dim, num_conv=2, kernel=7,
-                                    num_heads=1, dropout_p=0.1,
-                                    dropout=0.5, max_len=5000) for _ in range(num_blocks)])
-
-    def forward(self, x, key_padding_mask):
-        for enc_block in self.blocks:
-            x = enc_block(x, key_padding_mask)
+    def forward(self, x, padding_mask, test=False):
+        for i in range(self.num_blocks):
+            x = self.blocks[i](x, padding_mask, i*(self.num_conv+2)+1, self.num_blocks*(self.num_conv+2), test=test)
         return x
 
 
@@ -250,3 +198,42 @@ class BiDAFAttention(nn.Module):
         s = s0 + s1 + s2 + self.bias
 
         return s
+
+
+class ConditionalOutputLayer(nn.Module):
+    """
+    Note: This is answer-pointer version. Based on
+    Machine Comprehension Using Match-LSTM and Answer Pointer:
+    https://arxiv.org/pdf/1608.07905.pdf
+    """
+
+    def __init__(self, in_dim, out_dim=1):
+        super(OutputLayer, self).__init__()
+        half_dim = in_dim // 2
+        self.rnn = nn.RNN(input_size=in_dim,
+                          hidden_size=half_dim,
+                          batch_first=True)
+        self.v = nn.Parameter(torch.zeros((half_dim, 1)))
+        self.c = nn.Parameter(torch.zeros((1, 1)))
+        for param in (self.v, self.c):
+            nn.init.xavier_uniform_(param)
+        self.ans_lstm = nn.LSTM(input_size=in_dim,
+                                hidden_size=half_dim,
+                                batch_first=True)
+
+    def forward(self, m0, m1, m2, mask):
+        H_r = torch.cat([m0, m1], dim=2)
+        # RNN first timestep
+        F_s, h = self.rnn(H_r)
+        v_F_s = F_s @ self.v
+        c_rep = self.c.repeat(1, m0.shape[1], 1)
+        beta_s = masked_softmax((v_F_s + c_rep).squeeze(), mask, dim=1, log_softmax=True)
+
+        _, (h, c) = self.ans_lstm(beta_s @ H_r, (h, torch.zeros(1, m0.shape[0], m0.shape[2])))
+
+        # RNN second time step
+        F_e, h = self.rnn(H_r, h)
+        v_F_e = F_e @ self.v
+        c_rep = self.c.repeat(1, m0.shape[1], 1)
+        beta_e = masked_softmax((v_F_e + c_rep).squeeze(), mask, dim=1, log_softmax=True)
+        return beta_s, beta_e
