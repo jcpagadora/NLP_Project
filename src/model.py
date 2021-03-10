@@ -50,9 +50,13 @@ class QANet(nn.Module):
         self.q_emb_encer = EmbeddingEncoder(in_dim, num_conv=4, kernel=7, num_heads=1, dropout=0.1)
 
         self.cq_att_layer = BiDAFAttention(in_dim)
-        # self.att_cnn = nn.Conv1d(in_dim*4, in_dim, kernel_size=7, padding=7//2)
-        self.proj = nn.Linear(in_dim*4, in_dim)
+
+        self.att_cnn = nn.Conv1d(in_dim*4, in_dim, kernel_size=7, padding=7//2)
+        nn.init.kaiming_normal_(self.att_cnn.weight, nonlinearity="relu")
+        nn.init.zeros_(self.att_cnn.bias)
+
         self.model_encoder = ModelEncoder(in_dim, num_conv=2, kernel=7, num_heads=1, dropout=0.1, num_blocks=7)
+
         self.output = OutputLayer(in_dim*2)
 
 
@@ -70,10 +74,9 @@ class QANet(nn.Module):
         # Context-Query Attention
         cq_att = self.cq_att_layer(c_emb_enc, q_emb_enc, cword_mask, qword_mask)
 
-        cq_att = F.relu(self.proj(cq_att))
-        # cq_att = cq_att.permute(0, 2, 1)
-        # cq_att = F.relu(self.att_cnn(cq_att))
-        # cq_att = cq_att.permute(0, 2, 1)
+        cq_att = cq_att.permute(0, 2, 1)
+        cq_att = F.relu(self.att_cnn(cq_att))
+        cq_att = cq_att.permute(0, 2, 1)
 
         # Model Encoder Layer
         model_enc0 = self.model_encoder(cq_att, cword_mask, test=test)

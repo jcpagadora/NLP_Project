@@ -34,30 +34,36 @@ class EncoderBlock(nn.Module):
         self.conv_layers = nn.ModuleList([nn.Sequential(ds_conv(input_channel=inp_dim, output_channel=inp_dim, k_size=kernel),
                                               nn.ReLU()) for _ in range(num_conv)])
         self.layer_norms = nn.ModuleList([nn.LayerNorm(inp_dim) for _ in range(num_conv)])
+        self.conv_layer1 = nn.Sequential(ds_conv(input_channel=inp_dim, output_channel=inp_dim, k_size=kernel), nn.ReLU())
+        self.conv_layer2 = nn.Sequential(ds_conv(input_channel=inp_dim, output_channel=inp_dim, k_size=kernel), nn.ReLU())
         self.att_layer_norm = nn.LayerNorm(inp_dim)
         self.self_attention = MHA(inp_dim, num_heads, attn_pdrop=dropout, resid_pdrop=dropout)
         self.feed_layer_norm = nn.LayerNorm(inp_dim)
-        self.proj1 = nn.Linear(inp_dim, inp_dim)
-        self.nonLinear = nn.ReLU()
-        self.proj2 = nn.Linear(inp_dim, inp_dim)
+        self.dropout = nn.Dropout(p=dropout)
 
     def forward(self, x, padding_mask, current_layer, total_layer, test=False):
         x = self.pos_enc(x)
         for i in range(self.num_conv):
             y = self.layer_norms[i](x)
+            if i % 2 == 0:
+                y = self.dropout(y)
             y = y.permute(0, 2, 1)
             y = self.conv_layers[i](y)
             y = y.permute(0, 2, 1)
             x = stochastic_dropout(x, y, current_layer+i, total_layer, test=test)
         # Self-Attention
         y = self.att_layer_norm(x)
+        y = self.dropout(y)
         y = self.self_attention(y, padding_mask)
-        x = stochastic_dropout(x, y, current_layer+self.num_conv, total_layer, test=test)
+        x = x + y
         # Feedforward
         y = self.feed_layer_norm(x)
-        y = self.proj1(y)
-        y = self.nonLinear(y)
-        y = self.proj2(y)
+        y = self.dropout(y)
+        y = y.permute(0, 2, 1)
+        y = self.conv_layer1(y)
+        y = self.conv_layer2(y)
+        y = y.permute(0, 2, 1)
+
         x = stochastic_dropout(x, y, current_layer+self.num_conv+1, total_layer, test=test)
         return x
 
@@ -80,6 +86,10 @@ class ds_conv(nn.Module):
         self.depthwise = nn.Conv1d(input_channel, input_channel, kernel_size=k_size, padding=k_size // 2,
                                    groups=input_channel)
         self.pointwise = nn.Conv1d(input_channel, output_channel, kernel_size=1, groups=1)
+        nn.init.kaiming_normal_(self.depthwise.weight, nonlinearity="relu")
+        nn.init.kaiming_normal_(self.pointwise.weight, nonlinearity="relu")
+        nn.init.zeros_(self.depthwise.weight)
+        nn.init.zeros_(self.pointwise.weight)
 
     def forward(self, x):
         x = self.pointwise(self.depthwise(x))
@@ -108,6 +118,7 @@ class PositionalEncoding(nn.Module):
         x = self.dropout(x)
         return x
 
+
 def create_sinusoidal_table(seq_len, hidden_size):
     table = torch.zeros(seq_len, hidden_size)
     pos = torch.tensor(list(range(seq_len))).unsqueeze(1)
@@ -116,12 +127,6 @@ def create_sinusoidal_table(seq_len, hidden_size):
     table[:, 0::2] = torch.sin(pos / half_dim)
     table[:, 1::2] = torch.cos(pos / half_dim)
     return table
-
-
-
-
-
-
 
 
 class MHA(nn.Module):
@@ -164,14 +169,13 @@ class MHA(nn.Module):
         y = att @ v # (B, nh, T, T) x (B, nh, T, hs) -> (B, nh, T, hs)
         y = y.transpose(1, 2).contiguous().view(B, T, C) # re-assemble all head outputs side by side
         # output projection
-        y = self.resid_drop(self.proj(y))
-        y = self.layer_norm(y + x)
+        y = self.resid_drop(y)
 
         return y
 
 def stochastic_dropout(identity, output, cur_depth, total_depth, test=False, p_last=0.9):
     if test:
-        return identity
+        return output + identity
 
     prop = 1 - (cur_depth/total_depth) * (1 - p_last)
     b = np.random.binomial(1, prop)
