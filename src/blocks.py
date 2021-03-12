@@ -40,7 +40,7 @@ class EncoderBlock(nn.Module):
         self.dropout = nn.Dropout(p=dropout)
 
     def forward(self, x, padding_mask, current_layer, total_layer, test=False):
-
+        x = PosEncoder(x)
         for i in range(self.num_conv):
             y = self.layer_norms[i](x)
             if i % 2 == 0:
