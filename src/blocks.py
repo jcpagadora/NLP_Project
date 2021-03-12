@@ -11,7 +11,6 @@ class EncoderBlock(nn.Module):
         Between each is a layer-norm.
         Note: Each of these is placed within a residual block
         Note: filters is the dimensionality of this block, i.e., input and output size
-
         Args:
             inp_dim (int): Dimension of the input (after positional encoding)
             num_conv (int): Number of initial convolutional layers
@@ -21,13 +20,12 @@ class EncoderBlock(nn.Module):
             dropout_p (float): Dropout probability for positional encoding
             dropout (float): Dropout probability for feedforward layer
             max_len (int): Maximum length for positional encoding
-
        Note: output of this layer should equal the number of filters
      """
 
     def __init__(self, inp_dim, num_conv=2, kernel=7, num_heads=1, dropout=0.1):
         super(EncoderBlock, self).__init__()
-        self.pos_enc = PositionalEncoding(inp_dim)
+        # self.pos = PositionalEncoding(hidden_size=inp_dim)
         self.num_conv = num_conv
         self.dropout = dropout
         # depthwise separable cnn layer for fewer parameters
@@ -42,7 +40,7 @@ class EncoderBlock(nn.Module):
         self.dropout = nn.Dropout(p=dropout)
 
     def forward(self, x, padding_mask, current_layer, total_layer, test=False):
-        x = self.pos_enc(x)
+
         for i in range(self.num_conv):
             y = self.layer_norms[i](x)
             if i % 2 == 0:
@@ -72,7 +70,6 @@ class ds_conv(nn.Module):
     """ Depthwise Separable Convolution for input into encoder block within
             embedding encoder layer
             In the original paper, kernel size is set to 7.
-
             Args:
                 input_channel: number of input channel
                 output_channel: number of output channel
@@ -99,9 +96,7 @@ class ds_conv(nn.Module):
 class PositionalEncoding(nn.Module):
     """Positional Encoding module for input into encoder block within
        embedding encoder layer.
-
        Reference:  https://pytorch.org/tutorials/beginner/transformer_tutorial.html
-
        Args:
            emb_dim (int): Embedding dimension for positional encoding.
                           Equals dimension of input.
@@ -117,6 +112,30 @@ class PositionalEncoding(nn.Module):
         x = x + self.pos_table[:, x.size(1), :]
         x = self.dropout(x)
         return x
+
+
+def PosEncoder(x, min_timescale=1.0, max_timescale=1.0e4):
+    length = x.size()[1]
+    channels = x.size()[2]
+    signal = get_timing_signal(length, channels, min_timescale, max_timescale)
+    return x + signal.to("cuda")
+
+
+def get_timing_signal(length, channels,
+                      min_timescale=1.0, max_timescale=1.0e4):
+    position = torch.arange(length).type(torch.float32)
+    num_timescales = channels // 2
+    log_timescale_increment = (math.log(float(max_timescale) / float(min_timescale)) / (float(num_timescales) - 1))
+    inv_timescales = min_timescale * torch.exp(
+            torch.arange(num_timescales).type(torch.float32) * -log_timescale_increment)
+    scaled_time = position.unsqueeze(1) * inv_timescales.unsqueeze(0)
+    signal = torch.cat([torch.sin(scaled_time), torch.cos(scaled_time)], dim = 1)
+    m = nn.ZeroPad2d((0, (channels % 2), 0, 0))
+    signal = m(signal)
+    signal = signal.view(1, length, channels)
+    return signal
+
+
 
 
 def create_sinusoidal_table(seq_len, hidden_size):
@@ -182,5 +201,3 @@ def stochastic_dropout(identity, output, cur_depth, total_depth, test=False, p_l
     if b == 0:
         return identity
     return output + identity
-
-

@@ -99,7 +99,7 @@ def get_train_args():
                         help='Number of steps between successive evaluations.')
     parser.add_argument('--lr',
                         type=float,
-                        default=0.5,
+                        default=0.001,
                         help='Learning rate.')
     parser.add_argument('--l2_wd',
                         type=float,
@@ -107,16 +107,12 @@ def get_train_args():
                         help='L2 weight decay.')
     parser.add_argument('--num_epochs',
                         type=int,
-                        default=30,
+                        default=20,
                         help='Number of epochs for which to train. Negative means forever.')
     parser.add_argument('--drop_prob',
                         type=float,
-                        default=0.2,
+                        default=0.1,
                         help='Probability of zeroing an activation in dropout layers.')
-    parser.add_argument('--char_size',
-                       type=float,
-                       default=0.2,
-                       help='The size of the character list.')
     parser.add_argument('--metric_name',
                         type=str,
                         default='F1',
@@ -136,7 +132,7 @@ def get_train_args():
                         help='Random seed for reproducibility.')
     parser.add_argument('--ema_decay',
                         type=float,
-                        default=0.999,
+                        default=0.9999,
                         help='Decay rate for exponential moving average of parameters.')
 
     args = parser.parse_args()
@@ -230,6 +226,14 @@ def add_train_test_args(parser):
                         default=64,
                         help='Batch size per GPU. Scales automatically when \
                               multiple GPUs are available.')
+    parser.add_argument('--num_heads',
+                        type=int,
+                        default=1,
+                        help="Number of heads used in multihead attention")
+    parser.add_argument('--num_blocks',
+                        type=int,
+                        default=4,
+                        help="Number of blocks used in model encoding layer")
     parser.add_argument('--use_squad_v2',
                         type=lambda s: s.lower().startswith('t'),
                         default=True,

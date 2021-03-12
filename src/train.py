@@ -1,9 +1,3 @@
-"""Train a model on SQuAD.
-
-Author:
-    Chris Chute (chute@stanford.edu)
-"""
-
 import numpy as np
 import random
 import torch
@@ -51,6 +45,8 @@ def main(args):
     model = QANet(word_vectors=word_vectors,
                   char_vectors=char_vectors,
                   hidden_size=args.hidden_size,
+                  num_heads=args.num_heads,
+                  num_blocks=args.num_blocks,
                   drop_prob=args.drop_prob)
     model = nn.DataParallel(model, args.gpu_ids)
     if args.load_path:
@@ -77,11 +73,9 @@ def main(args):
     # Get data loader
     log.info('Building dataset...')
     train_dataset = SQuAD(args.train_record_file, args.use_squad_v2)
-    sample = range(100)
     train_loader = data.DataLoader(train_dataset,
                                    batch_size=args.batch_size,
-                                   shuffle=False,
-                                   sampler=SubsetRandomSampler(sample),
+                                   shuffle=True,
                                    num_workers=args.num_workers,
                                    collate_fn=collate_fn)
     dev_dataset = SQuAD(args.dev_record_file, args.use_squad_v2)
@@ -100,9 +94,9 @@ def main(args):
         log.info(f'Starting epoch {epoch}...')
         with torch.enable_grad(), \
                 tqdm(total=len(train_loader.dataset)) as progress_bar:
-            # for cw_idxs, cc_idxs, qw_idxs, qc_idxs, y1, y2, ids in train_loader:
-            cw_idxs, cc_idxs, qw_idxs, qc_idxs, y1, y2, ids = next(iter(train_loader))
-            for i in range(len(train_loader)):
+            for cw_idxs, cc_idxs, qw_idxs, qc_idxs, y1, y2, ids in train_loader:
+            # cw_idxs, cc_idxs, qw_idxs, qc_idxs, y1, y2, ids = next(iter(train_loader))
+            # for i in range(len(train_loader)):
 
                 # Setup for forward
                 cw_idxs = cw_idxs.to(device)
@@ -113,7 +107,7 @@ def main(args):
                 optimizer.zero_grad()
 
                 # Forward
-                log_p1, log_p2 = model(cw_idxs, cc_idxs, qw_idxs, qc_idxs, test=True)
+                log_p1, log_p2 = model(cw_idxs, cc_idxs, qw_idxs, qc_idxs, test=False)
                 y1, y2 = y1.to(device), y2.to(device)
                 loss = F.nll_loss(log_p1, y1) + F.nll_loss(log_p2, y2)
                 loss_val = loss.item()

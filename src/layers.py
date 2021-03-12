@@ -94,7 +94,7 @@ class EmbeddingEncoder(nn.Module):
 
     def __init__(self, inp_dim, num_conv=4, kernel=7, num_heads=1, dropout=0.1):
         super(EmbeddingEncoder, self).__init__()
-        self.block1 = EncoderBlock(inp_dim, num_conv= num_conv, kernel=kernel, num_heads=num_heads, dropout=dropout)
+        self.block1 = EncoderBlock(inp_dim, num_conv=num_conv, kernel=kernel, num_heads=num_heads, dropout=dropout)
         self.num_conv = num_conv
 
     def forward(self, x, padding_mask, test=False):
@@ -111,7 +111,7 @@ class ModelEncoder(nn.Module):
         super(ModelEncoder, self).__init__()
         self.num_conv = num_conv
         self.num_blocks = num_blocks
-        self.blocks = nn.ModuleList([EncoderBlock(inp_dim, num_conv= num_conv, kernel=kernel,
+        self.blocks = nn.ModuleList([EncoderBlock(inp_dim, num_conv=num_conv, kernel=kernel,
                                     num_heads=num_heads, dropout=dropout) for _ in range(num_blocks)])
 
     def forward(self, x, padding_mask, test=False):

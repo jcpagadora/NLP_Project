@@ -9,7 +9,6 @@ class QANet(nn.Module):
         1. Input Embedding Layer
             - Word embeddings (GloVe)
             - Character embeddings
-
         2. Embedding Encoder Layer
             - Stack of encoder blocks, each consists of
                 i. Convolution layers
@@ -17,14 +16,9 @@ class QANet(nn.Module):
                       kernel = 7,  # filters = 128,  # conv. layers = 4
                 ii. Self-attention layer
                 iii. Feed forward layer
-
         3. Context-Query Attention Layer
-
         4. Model Encoder Layer
-
         5. Output Layer
-
-
     Args:
         word_vectors (torch.Tensor): Pre-trained word vectors.
         TODO: double check char vectors
@@ -33,7 +27,7 @@ class QANet(nn.Module):
         conv_dim (int): For conv layers, this is number of filters, but used throughout as hidden_size
         drop_prob (float): Dropout probability.
     """
-    def __init__(self, word_vectors, char_vectors, hidden_size, drop_prob = 0.1):
+    def __init__(self, word_vectors, char_vectors, hidden_size, num_heads=1, num_blocks=4, drop_prob=0.1):
 
         super(QANet, self).__init__()
         self.c_ember = Embedding(word_vectors=word_vectors,
@@ -45,9 +39,9 @@ class QANet(nn.Module):
 
         in_dim = hidden_size
 
-        self.c_emb_encer = EmbeddingEncoder(in_dim, num_conv=4, kernel=7, num_heads=1, dropout=0.1)
+        self.c_emb_encer = EmbeddingEncoder(in_dim, num_conv=4, kernel=7, num_heads=num_heads, dropout=0.1)
 
-        self.q_emb_encer = EmbeddingEncoder(in_dim, num_conv=4, kernel=7, num_heads=1, dropout=0.1)
+        self.q_emb_encer = EmbeddingEncoder(in_dim, num_conv=4, kernel=7, num_heads=num_heads, dropout=0.1)
 
         self.cq_att_layer = BiDAFAttention(in_dim)
 
@@ -55,7 +49,8 @@ class QANet(nn.Module):
         nn.init.kaiming_normal_(self.att_cnn.weight, nonlinearity="relu")
         nn.init.zeros_(self.att_cnn.bias)
 
-        self.model_encoder = ModelEncoder(in_dim, num_conv=2, kernel=7, num_heads=1, dropout=0.1, num_blocks=7)
+        self.model_encoder = ModelEncoder(in_dim, num_conv=2, kernel=7, num_heads=num_heads, dropout=0.1,
+                                          num_blocks=num_blocks)
 
         self.output = OutputLayer(in_dim*2)
 
@@ -86,5 +81,3 @@ class QANet(nn.Module):
         # Output Layer
         start_probs, end_probs = self.output(model_enc0, model_enc1, model_enc2, cword_mask)
         return start_probs, end_probs
-
-
