@@ -6,6 +6,7 @@ import torch.nn.functional as F
 import torch.optim as optim
 import torch.optim.lr_scheduler as sched
 import torch.utils.data as data
+import pytorch_warmup as warmup
 from torch.utils.data import SubsetRandomSampler
 
 import util
@@ -68,7 +69,7 @@ def main(args):
     # Get optimizer and scheduler
     optimizer = optim.Adam(model.parameters(), 0.001, betas=(0.8, 0.999), eps=1e-07,
                            weight_decay=3e-07)
-    scheduler = sched.LambdaLR(optimizer, lambda s: 1.)  # Constant LR
+    # scheduler = sched.LambdaLR(optimizer, lambda s: 1)  # Constant LR
 
     # Get data loader
     log.info('Building dataset...')
@@ -104,6 +105,13 @@ def main(args):
                 qc_idxs = qc_idxs.to(device)
                 cc_idxs = cc_idxs.to(device)
                 batch_size = cw_idxs.size(0)
+
+                # lr warm up
+                if step // batch_size <= 1000:
+                    lr_scale = min(1., np.log(float(step // batch_size + 1)) / np.log(1000.))
+                    for pg in optimizer.param_groups:
+                        pg['lr'] = lr_scale * 0.001
+
                 optimizer.zero_grad()
 
                 # Forward
@@ -116,7 +124,7 @@ def main(args):
                 loss.backward()
                 nn.utils.clip_grad_norm_(model.parameters(), args.max_grad_norm)
                 optimizer.step()
-                scheduler.step(step // batch_size)
+                # scheduler.step(step // batch_size)
                 ema(model, step // batch_size)
 
                 # Log info
