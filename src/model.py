@@ -21,7 +21,6 @@ class QANet(nn.Module):
         5. Output Layer
     Args:
         word_vectors (torch.Tensor): Pre-trained word vectors.
-        TODO: double check char vectors
         char_size (int): Number of characters in char-level vocabulary
         char_emb_dim (int): Dimensionality of character-level embedding
         conv_dim (int): For conv layers, this is number of filters, but used throughout as hidden_size
@@ -45,14 +44,14 @@ class QANet(nn.Module):
 
         self.cq_att_layer = BiDAFAttention(in_dim)
 
-        self.att_cnn = nn.Conv1d(in_dim*4, in_dim, kernel_size=7, padding=7//2)
+        self.att_cnn = nn.Conv1d(in_dim*4, in_dim, kernel_size=1)
         nn.init.kaiming_normal_(self.att_cnn.weight, nonlinearity="relu")
         nn.init.zeros_(self.att_cnn.bias)
 
         self.model_encoder = ModelEncoder(in_dim, num_conv=2, kernel=7, num_heads=num_heads, dropout=0.1,
                                           num_blocks=num_blocks)
 
-        self.output = OutputLayer(in_dim*2)
+        self.output = OutputLayer(in_dim*6)
 
 
     def forward(self, cword_idxs, cchar_idxs, qword_idxs, qchar_idxs, test=False):
@@ -68,6 +67,7 @@ class QANet(nn.Module):
         q_emb_enc = self.q_emb_encer(q_emb, qword_mask, test=test)
         # Context-Query Attention
         cq_att = self.cq_att_layer(c_emb_enc, q_emb_enc, cword_mask, qword_mask)
+        reuse_att = cq_att
 
         cq_att = cq_att.permute(0, 2, 1)
         cq_att = F.relu(self.att_cnn(cq_att))
@@ -79,5 +79,6 @@ class QANet(nn.Module):
         model_enc2 = self.model_encoder(model_enc1, cword_mask, test=test)
 
         # Output Layer
-        start_probs, end_probs = self.output(model_enc0, model_enc1, model_enc2, cword_mask)
+        start_probs, end_probs = self.output(model_enc0, model_enc1, model_enc2, reuse_att, cword_mask)
         return start_probs, end_probs
+

@@ -6,7 +6,6 @@ import torch.nn.functional as F
 import torch.optim as optim
 import torch.optim.lr_scheduler as sched
 import torch.utils.data as data
-import pytorch_warmup as warmup
 from torch.utils.data import SubsetRandomSampler
 
 import util
@@ -107,10 +106,10 @@ def main(args):
                 batch_size = cw_idxs.size(0)
 
                 # lr warm up
-                if step // batch_size <= 1000:
-                    lr_scale = min(1., np.log(float(step // batch_size + 1)) / np.log(1000.))
-                    for pg in optimizer.param_groups:
-                        pg['lr'] = lr_scale * 0.001
+                # if step // batch_size <= 1000:
+                    # lr_scale = min(1., np.log(float(step // batch_size + 1)) / np.log(1000.))
+                    # for pg in optimizer.param_groups:
+                        # pg['lr'] = lr_scale * 0.001
 
                 optimizer.zero_grad()
 
